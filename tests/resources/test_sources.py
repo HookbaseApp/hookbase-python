@@ -5,6 +5,7 @@ import respx
 
 from hookbase import Hookbase
 from hookbase.models import Source, SourceWithSecret
+from hookbase.models.sources import CreateSourceParams, UpdateSourceParams
 
 from ..conftest import make_paginated_response
 
@@ -110,3 +111,81 @@ def test_import_sources(mock_api, client):
     })
     result = client.sources.import_sources([SOURCE_DATA])
     assert result.imported == 1
+
+
+# --- transient_mode tests ---
+
+
+def test_source_transient_mode_defaults_false():
+    src = Source(**SOURCE_DATA)
+    assert src.transient_mode is False
+
+
+def test_source_transient_mode_true():
+    data = {**SOURCE_DATA, "transientMode": True}
+    src = Source(**data)
+    assert src.transient_mode is True
+
+
+def test_source_transient_mode_from_int():
+    """D1/SQLite returns booleans as 0/1 integers."""
+    data = {**SOURCE_DATA, "transientMode": 1}
+    src = Source(**data)
+    assert src.transient_mode is True
+
+    data_off = {**SOURCE_DATA, "transientMode": 0}
+    src_off = Source(**data_off)
+    assert src_off.transient_mode is False
+
+
+def test_source_transient_mode_serializes_as_camel():
+    src = Source(**{**SOURCE_DATA, "transientMode": True})
+    dumped = src.model_dump(by_alias=True)
+    assert "transientMode" in dumped
+    assert dumped["transientMode"] is True
+
+
+def test_create_source_with_transient_mode(mock_api, client):
+    resp_data = {**SOURCE_DATA, "transientMode": True, "signingSecret": "whsec_abc"}
+    mock_api.post("/api/sources").respond(200, json={"source": resp_data})
+    src = client.sources.create({
+        "name": "HIPAA Source",
+        "slug": "hipaa",
+        "transient_mode": True,
+    })
+    assert isinstance(src, SourceWithSecret)
+    assert src.transient_mode is True
+
+
+def test_create_source_params_serialization():
+    params = CreateSourceParams(name="test", transient_mode=True)
+    dumped = params.model_dump(by_alias=True, exclude_none=True)
+    assert dumped["transientMode"] is True
+
+
+def test_update_source_with_transient_mode(mock_api, client):
+    mock_api.patch("/api/sources/src_1").respond(204)
+    client.sources.update("src_1", {"transient_mode": True})
+
+
+def test_update_source_params_serialization():
+    params = UpdateSourceParams(transient_mode=True)
+    dumped = params.model_dump(by_alias=True, exclude_none=True)
+    assert dumped["transientMode"] is True
+    assert "name" not in dumped
+
+
+def test_get_source_with_transient_mode(mock_api, client):
+    data = {**SOURCE_DATA, "transientMode": True}
+    mock_api.get("/api/sources/src_1").respond(200, json={"source": data})
+    src = client.sources.get("src_1")
+    assert src.transient_mode is True
+
+
+def test_list_sources_with_transient_mode(mock_api, client):
+    data = {**SOURCE_DATA, "transientMode": True}
+    mock_api.get("/api/sources").respond(200, json=make_paginated_response(
+        [data], data_key="sources", total=1,
+    ))
+    page = client.sources.list()
+    assert page.data[0].transient_mode is True

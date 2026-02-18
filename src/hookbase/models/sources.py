@@ -34,12 +34,13 @@ class Source(HookbaseModel):
     ip_denylist: list[str] | None = None
     rate_limit: int | None = None
     rate_limit_window: int | None = None
+    transient_mode: bool = False
     event_count: int = 0
     last_event_at: str | None = None
     created_at: str = ""
     updated_at: str = ""
 
-    @field_validator("is_active", "verify_signature", mode="before")
+    @field_validator("is_active", "verify_signature", "transient_mode", mode="before")
     @classmethod
     def parse_bool_from_int(cls, v: Any) -> Any:
         if isinstance(v, int):
@@ -76,6 +77,7 @@ class CreateSourceParams(HookbaseModel):
     ip_denylist: list[str] | None = None
     rate_limit: int | None = None
     rate_limit_window: int | None = None
+    transient_mode: bool | None = None
 
 
 class UpdateSourceParams(HookbaseModel):
@@ -91,3 +93,4 @@ class UpdateSourceParams(HookbaseModel):
     ip_denylist: list[str] | None = None
     rate_limit: int | None = None
     rate_limit_window: int | None = None
+    transient_mode: bool | None = None
