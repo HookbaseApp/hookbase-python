@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 from ._base import HookbaseModel
 
-DeliveryStatus = str  # API may return: pending, success, failed, retrying, delivered, failed_over, schema_failed, exhausted, etc.
+# API may return: pending, success, failed, retrying, delivered,
+# failed_over, schema_failed, exhausted, etc.
+DeliveryStatus = str
 
 
 class Delivery(HookbaseModel):
