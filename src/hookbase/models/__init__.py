@@ -18,9 +18,15 @@ from .deliveries import (
 )
 from .destinations import (
     AuthType,
+    AzureBlobConfig,
     CreateDestinationParams,
     Destination,
+    DestinationType,
+    FieldMapping,
+    GCSConfig,
     HttpMethod,
+    R2Config,
+    S3Config,
     TestResult,
     UpdateDestinationParams,
 )
@@ -123,9 +129,15 @@ __all__ = [
     "ReplayResult",
     # Destinations
     "AuthType",
+    "AzureBlobConfig",
     "CreateDestinationParams",
     "Destination",
+    "DestinationType",
+    "FieldMapping",
+    "GCSConfig",
     "HttpMethod",
+    "R2Config",
+    "S3Config",
     "TestResult",
     "UpdateDestinationParams",
     # DLQ
