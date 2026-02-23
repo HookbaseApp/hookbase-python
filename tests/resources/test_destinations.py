@@ -141,9 +141,16 @@ def test_create_warehouse_destination(mock_api, client):
 def test_update_warehouse_destination_config(mock_api, client):
     updated = {**S3_DEST_DATA, "config": {**S3_DEST_DATA["config"], "bucket": "new-bucket"}}
     mock_api.patch("/api/destinations/dst_s3").respond(200, json={"destination": updated})
-    dest = client.destinations.update("dst_s3", {
-        "config": {"bucket": "new-bucket", "region": "us-east-1", "accessKeyId": "AKIA", "secretAccessKey": "secret"},
-        "fieldMapping": [{"source": "$.body", "target": "payload", "type": "json"}],
+    client.destinations.update("dst_s3", {
+        "config": {
+            "bucket": "new-bucket",
+            "region": "us-east-1",
+            "accessKeyId": "AKIA",
+            "secretAccessKey": "secret",
+        },
+        "fieldMapping": [
+            {"source": "$.body", "target": "payload", "type": "json"},
+        ],
     })
 
 
@@ -154,7 +161,9 @@ def test_field_mapping_model():
     assert fm.type == "string"
     assert fm.default is None
 
-    fm_with_default = FieldMapping(source="$.ts", target="timestamp", type="timestamp", default="now()")
+    fm_with_default = FieldMapping(
+        source="$.ts", target="timestamp", type="timestamp", default="now()",
+    )
     assert fm_with_default.default == "now()"
 
 
