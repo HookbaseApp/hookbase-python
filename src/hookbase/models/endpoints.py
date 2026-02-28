@@ -30,6 +30,7 @@ class WebhookEndpoint(HookbaseModel):
             return {}
         return v
     metadata: dict[str, Any] | None = None
+    use_static_ip: bool = True
     total_messages: int = 0
     total_successes: int = 0
     total_failures: int = 0
@@ -49,6 +50,7 @@ class CreateEndpointParams(HookbaseModel):
     rate_limit_period: int | None = None
     headers: dict[str, str] | None = None
     metadata: dict[str, Any] | None = None
+    use_static_ip: bool | None = None
 
 
 class UpdateEndpointParams(HookbaseModel):
@@ -60,6 +62,7 @@ class UpdateEndpointParams(HookbaseModel):
     rate_limit_period: int | None = None
     headers: dict[str, str] | None = None
     metadata: dict[str, Any] | None = None
+    use_static_ip: bool | None = None
 
 
 class EndpointStats(HookbaseModel):

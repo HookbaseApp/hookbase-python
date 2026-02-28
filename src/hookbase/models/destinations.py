@@ -75,6 +75,7 @@ class Destination(HookbaseModel):
     rate_limit: int | None = None
     rate_limit_window: int | None = None
     is_active: bool = True
+    use_static_ip: bool = True
     config: dict[str, Any] | None = None
     field_mapping: list[FieldMapping] | None = None
     delivery_count: int = 0
@@ -147,6 +148,7 @@ class CreateDestinationParams(HookbaseModel):
     rate_limit_window: int | None = None
     config: dict[str, Any] | None = None
     field_mapping: list[FieldMapping] | None = None
+    use_static_ip: bool | None = None
 
 
 class UpdateDestinationParams(HookbaseModel):
@@ -165,6 +167,7 @@ class UpdateDestinationParams(HookbaseModel):
     is_active: bool | None = None
     config: dict[str, Any] | None = None
     field_mapping: list[FieldMapping] | None = None
+    use_static_ip: bool | None = None
 
 
 class TestResult(HookbaseModel):
