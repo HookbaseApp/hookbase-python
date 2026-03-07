@@ -78,6 +78,8 @@ class Destination(HookbaseModel):
     use_static_ip: bool = True
     config: dict[str, Any] | None = None
     field_mapping: list[FieldMapping] | None = None
+    batch_size: int | None = None
+    batch_window_seconds: int | None = None
     delivery_count: int = 0
     last_delivery_at: str | None = None
     created_at: str = ""
@@ -149,6 +151,8 @@ class CreateDestinationParams(HookbaseModel):
     config: dict[str, Any] | None = None
     field_mapping: list[FieldMapping] | None = None
     use_static_ip: bool | None = None
+    batch_size: int | None = None
+    batch_window_seconds: int | None = None
 
 
 class UpdateDestinationParams(HookbaseModel):
@@ -168,6 +172,8 @@ class UpdateDestinationParams(HookbaseModel):
     config: dict[str, Any] | None = None
     field_mapping: list[FieldMapping] | None = None
     use_static_ip: bool | None = None
+    batch_size: int | None = None
+    batch_window_seconds: int | None = None
 
 
 class TestResult(HookbaseModel):
