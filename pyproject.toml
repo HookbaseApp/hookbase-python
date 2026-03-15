@@ -43,7 +43,7 @@ dev = [
 
 [project.urls]
 Homepage = "https://hookbase.app"
-Documentation = "https://docs.hookbase.app/sdk/python"
+Documentation = "https://www.hookbase.app/docs/send/sdk"
 Repository = "https://github.com/hookbase/hookbase-python"
 Issues = "https://github.com/hookbase/hookbase-python/issues"
 
