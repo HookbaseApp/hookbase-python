@@ -189,3 +189,49 @@ def test_list_sources_with_transient_mode(mock_api, client):
     ))
     page = client.sources.list()
     assert page.data[0].transient_mode is True
+
+
+# --- allowed_methods tests ---
+
+
+def test_source_allowed_methods_defaults_empty():
+    """No restriction is the default; [] means the endpoint accepts any HTTP method."""
+    src = Source(**SOURCE_DATA)
+    assert src.allowed_methods == []
+
+
+def test_source_allowed_methods_from_list():
+    data = {**SOURCE_DATA, "allowedMethods": ["GET", "POST"]}
+    src = Source(**data)
+    assert src.allowed_methods == ["GET", "POST"]
+
+
+def test_source_allowed_methods_from_json_string():
+    """The column is JSONB projected as text, so it can arrive as a JSON string."""
+    data = {**SOURCE_DATA, "allowedMethods": '["POST"]'}
+    src = Source(**data)
+    assert src.allowed_methods == ["POST"]
+
+
+def test_source_allowed_methods_null_becomes_empty():
+    """NULL and [] both mean "any method" — normalize so callers only handle a list."""
+    data = {**SOURCE_DATA, "allowedMethods": None}
+    src = Source(**data)
+    assert src.allowed_methods == []
+
+
+def test_source_allowed_methods_malformed_fails_open():
+    data = {**SOURCE_DATA, "allowedMethods": "not json"}
+    src = Source(**data)
+    assert src.allowed_methods == []
+
+
+def test_create_source_params_serializes_allowed_methods():
+    params = CreateSourceParams(name="s", allowed_methods=["GET", "POST"])
+    assert params.model_dump(by_alias=True, exclude_none=True)["allowedMethods"] == ["GET", "POST"]
+
+
+def test_update_source_params_empty_list_is_sent():
+    """[] must survive serialization — it is how a source reverts to accepting any method."""
+    params = UpdateSourceParams(allowed_methods=[])
+    assert params.model_dump(by_alias=True, exclude_none=True)["allowedMethods"] == []
