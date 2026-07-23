@@ -13,6 +13,9 @@ SourceProvider = Literal[
 ]
 DedupStrategy = Literal["none", "header", "payload_hash", "event_id"]
 IpFilterMode = Literal["none", "allowlist", "denylist"]
+# HTTP verbs an ingest endpoint can be restricted to. OPTIONS is excluded: CORS preflight is
+# answered before ingest runs, so it is never gateable.
+IngestMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"]
 
 
 class Source(HookbaseModel):
@@ -35,6 +38,8 @@ class Source(HookbaseModel):
     rate_limit: int | None = None
     rate_limit_window: int | None = None
     transient_mode: bool = False
+    #: HTTP verbs the ingest endpoint accepts. Empty list means any method.
+    allowed_methods: list[str] = []
     event_count: int = 0
     last_event_at: str | None = None
     created_at: str = ""
@@ -58,6 +63,20 @@ class Source(HookbaseModel):
                 return None
         return v
 
+    @field_validator("allowed_methods", mode="before")
+    @classmethod
+    def parse_allowed_methods(cls, v: Any) -> Any:
+        """Coerce null/JSON-string forms to a list; both mean "any method" when empty."""
+        if v is None:
+            return []
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                return parsed if isinstance(parsed, list) else []
+            except (json.JSONDecodeError, ValueError):
+                return []
+        return v
+
 
 class SourceWithSecret(Source):
     signing_secret: str = ""
@@ -78,6 +97,8 @@ class CreateSourceParams(HookbaseModel):
     rate_limit: int | None = None
     rate_limit_window: int | None = None
     transient_mode: bool | None = None
+    #: Restrict the ingest endpoint to these verbs. None/[] accepts any method.
+    allowed_methods: list[IngestMethod] | None = None
 
 
 class UpdateSourceParams(HookbaseModel):
@@ -94,3 +115,5 @@ class UpdateSourceParams(HookbaseModel):
     rate_limit: int | None = None
     rate_limit_window: int | None = None
     transient_mode: bool | None = None
+    #: Restrict the ingest endpoint to these verbs. Pass [] to accept any method again.
+    allowed_methods: list[IngestMethod] | None = None
