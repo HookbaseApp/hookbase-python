@@ -19,6 +19,7 @@ class CronJob(HookbaseModel):
     schedule: str = ""
     timezone: str = "UTC"
     is_active: bool = True
+    use_static_ip: bool = True
     group_id: str | None = None
     last_run_at: str | None = None
     next_run_at: str | None = None
@@ -49,6 +50,7 @@ class CreateCronJobParams(HookbaseModel):
     schedule: str
     timezone: str | None = None
     is_active: bool | None = None
+    use_static_ip: bool | None = None
     group_id: str | None = None
 
 
@@ -62,6 +64,7 @@ class UpdateCronJobParams(HookbaseModel):
     schedule: str | None = None
     timezone: str | None = None
     is_active: bool | None = None
+    use_static_ip: bool | None = None
     group_id: str | None = None
 
 
