@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 
 from ._base import HookbaseModel
 
@@ -13,6 +13,8 @@ DestinationType = Literal["http", "s3", "r2", "gcs", "azure_blob"]
 FileFormat = Literal["json", "jsonl"]
 PartitionBy = Literal["date", "hour", "source"]
 FieldMappingType = Literal["string", "number", "boolean", "timestamp", "json"]
+ThrottleMode = Literal["off", "rate", "concurrency"]
+RateUnit = Literal["second", "minute", "hour"]
 
 
 class FieldMapping(HookbaseModel):
@@ -57,6 +59,14 @@ class AzureBlobConfig(HookbaseModel):
     partition_by: PartitionBy | None = None
 
 
+class Throttle(HookbaseModel):
+    mode: ThrottleMode = "off"
+    rate_limit: int | None = None
+    rate_unit: RateUnit | None = None
+    max_concurrency: int | None = None
+    queue_limit: int | None = None
+
+
 class Destination(HookbaseModel):
     id: str
     organization_id: str | None = None
@@ -72,8 +82,7 @@ class Destination(HookbaseModel):
     timeout: int = 30
     retry_count: int = 3
     retry_interval: int = 60
-    rate_limit: int | None = None
-    rate_limit_window: int | None = None
+    throttle: Throttle | None = None
     is_active: bool = True
     use_static_ip: bool = True
     config: dict[str, Any] | None = None
@@ -84,6 +93,30 @@ class Destination(HookbaseModel):
     last_delivery_at: str | None = None
     created_at: str = ""
     updated_at: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_throttle(cls, data: Any) -> Any:
+        """Normalize the two response shapes the API uses for throttle data.
+
+        POST /api/destinations (create) and GET /api/destinations/export nest
+        throttle fields under a `throttle` object, but GET /api/destinations
+        (list) and GET /api/destinations/:id return them as flat top-level
+        `throttleMode`/`throttleRateLimit`/`throttleRateUnit`/
+        `throttleMaxConcurrency`/`throttleQueueLimit` fields (spread directly
+        from the DB row). Fold the flat shape into a nested `throttle` dict
+        so both response shapes populate the same field.
+        """
+        if isinstance(data, dict) and "throttle" not in data and "throttleMode" in data:
+            data = dict(data)
+            data["throttle"] = {
+                "mode": data.pop("throttleMode", None) or "off",
+                "rateLimit": data.pop("throttleRateLimit", None),
+                "rateUnit": data.pop("throttleRateUnit", None),
+                "maxConcurrency": data.pop("throttleMaxConcurrency", None),
+                "queueLimit": data.pop("throttleQueueLimit", None),
+            }
+        return data
 
     @field_validator("headers", mode="before")
     @classmethod
@@ -146,8 +179,7 @@ class CreateDestinationParams(HookbaseModel):
     timeout: int | None = None
     retry_count: int | None = None
     retry_interval: int | None = None
-    rate_limit: int | None = None
-    rate_limit_window: int | None = None
+    throttle: Throttle | None = None
     config: dict[str, Any] | None = None
     field_mapping: list[FieldMapping] | None = None
     use_static_ip: bool | None = None
@@ -166,8 +198,7 @@ class UpdateDestinationParams(HookbaseModel):
     timeout: int | None = None
     retry_count: int | None = None
     retry_interval: int | None = None
-    rate_limit: int | None = None
-    rate_limit_window: int | None = None
+    throttle: Throttle | None = None
     is_active: bool | None = None
     config: dict[str, Any] | None = None
     field_mapping: list[FieldMapping] | None = None

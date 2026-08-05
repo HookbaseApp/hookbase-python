@@ -4,7 +4,14 @@ import pytest
 import respx
 
 from hookbase import Hookbase
-from hookbase.models import Destination, FieldMapping, TestResult
+from hookbase.models import (
+    CreateDestinationParams,
+    Destination,
+    FieldMapping,
+    TestResult,
+    Throttle,
+    UpdateDestinationParams,
+)
 
 from ..conftest import make_paginated_response
 
@@ -181,6 +188,87 @@ def test_destination_without_type_defaults():
     assert dest.type == "http"
     assert dest.config is None
     assert dest.field_mapping is None
+
+
+def test_throttle_model():
+    throttle = Throttle(mode="rate", rate_limit=10, rate_unit="minute")
+    assert throttle.mode == "rate"
+    assert throttle.rate_limit == 10
+    assert throttle.rate_unit == "minute"
+    assert throttle.max_concurrency is None
+    assert throttle.queue_limit is None
+
+    default_throttle = Throttle()
+    assert default_throttle.mode == "off"
+
+
+def test_create_destination_response_nests_throttle(mock_api, client):
+    """POST /api/destinations nests throttle fields under `throttle`."""
+    data = {
+        **DEST_DATA,
+        "throttle": {
+            "mode": "rate",
+            "rateLimit": 100,
+            "rateUnit": "minute",
+            "maxConcurrency": None,
+            "queueLimit": 50,
+        },
+    }
+    mock_api.post("/api/destinations").respond(200, json={"destination": data})
+    dest = client.destinations.create({"name": "Backend", "url": "https://example.com/webhooks"})
+    assert dest.throttle is not None
+    assert dest.throttle.mode == "rate"
+    assert dest.throttle.rate_limit == 100
+    assert dest.throttle.rate_unit == "minute"
+    assert dest.throttle.max_concurrency is None
+    assert dest.throttle.queue_limit == 50
+
+
+def test_get_destination_response_has_flat_throttle_fields(mock_api, client):
+    """GET /api/destinations/:id returns throttle fields flat (spread from the
+    DB row) rather than nested under `throttle`; the model must normalize
+    this into the same `throttle` field used by the create/export shape."""
+    data = {
+        **DEST_DATA,
+        "throttleMode": "concurrency",
+        "throttleRateLimit": None,
+        "throttleRateUnit": None,
+        "throttleMaxConcurrency": 5,
+        "throttleQueueLimit": None,
+    }
+    mock_api.get("/api/destinations/dst_1").respond(200, json={"destination": data})
+    dest = client.destinations.get("dst_1")
+    assert dest.throttle is not None
+    assert dest.throttle.mode == "concurrency"
+    assert dest.throttle.max_concurrency == 5
+    assert dest.throttle.rate_limit is None
+
+
+def test_destination_without_throttle_data():
+    dest = Destination(**DEST_DATA)
+    assert dest.throttle is None
+
+
+def test_create_destination_params_throttle_serializes_camelcase():
+    params = CreateDestinationParams(
+        name="Backend",
+        url="https://example.com/webhooks",
+        throttle=Throttle(mode="rate", rate_limit=10, rate_unit="minute"),
+    )
+    body = params.model_dump(by_alias=True, exclude_none=True)
+    assert body["throttle"] == {"mode": "rate", "rateLimit": 10, "rateUnit": "minute"}
+
+
+def test_update_destination_params_throttle_serializes_camelcase():
+    params = UpdateDestinationParams(
+        throttle=Throttle(mode="concurrency", max_concurrency=25, queue_limit=100),
+    )
+    body = params.model_dump(by_alias=True, exclude_none=True)
+    assert body["throttle"] == {
+        "mode": "concurrency",
+        "maxConcurrency": 25,
+        "queueLimit": 100,
+    }
 
 
 def test_test_destination(mock_api, client):

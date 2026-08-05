@@ -26,8 +26,11 @@ from .destinations import (
     GCSConfig,
     HttpMethod,
     R2Config,
+    RateUnit,
     S3Config,
     TestResult,
+    Throttle,
+    ThrottleMode,
     UpdateDestinationParams,
 )
 from .dlq import (
@@ -137,8 +140,11 @@ __all__ = [
     "GCSConfig",
     "HttpMethod",
     "R2Config",
+    "RateUnit",
     "S3Config",
     "TestResult",
+    "Throttle",
+    "ThrottleMode",
     "UpdateDestinationParams",
     # DLQ
     "DlqBulkDeleteResult",
