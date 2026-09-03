@@ -38,8 +38,11 @@ class APIError(HookbaseError):
     ) -> APIError:
         error = body.get("error", body)
         if isinstance(error, str):
+            # The real API always sends `error` as a plain string, with `code` and `details`
+            # (Zod's `.flatten()` shape: `{ fieldErrors, formErrors }`) as siblings of `error`
+            # at the top level of the body — never nested inside it.
             message = error
-            code = "unknown_error"
+            code = body.get("code", "unknown_error")
         elif isinstance(error, dict):
             message = error.get("message", f"API error: {status_code}")
             code = error.get("code", "unknown_error")
@@ -49,7 +52,11 @@ class APIError(HookbaseError):
 
         if status_code in (400, 422):
             validation_errors = None
-            if isinstance(error, dict):
+            if isinstance(error, str):
+                details = body.get("details")
+                if isinstance(details, dict):
+                    validation_errors = details.get("fieldErrors")
+            elif isinstance(error, dict):
                 validation_errors = error.get("validationErrors")
             return ValidationError(
                 message=message,

@@ -27,9 +27,15 @@ logger = logging.getLogger("hookbase")
 def _parse_error(status_code: int, body: dict[str, Any], request_id: str | None) -> APIError:
     error = body.get("error", body)
     if isinstance(error, str):
+        # This is the shape the real API actually sends: `error` is a plain string, with
+        # `code` and `details` (Zod's `.flatten()` shape: `{ fieldErrors, formErrors }`) as
+        # siblings at the top level of the body, not nested inside `error`.
         message = error
-        code = "unknown_error"
-        validation_errors = None
+        code = body.get("code", "unknown_error")
+        details = body.get("details")
+        validation_errors = (
+            details.get("fieldErrors") if isinstance(details, dict) else None
+        )
     elif isinstance(error, dict):
         message = error.get("message") or body.get("message") or f"API error: {status_code}"
         code = error.get("code", "unknown_error")

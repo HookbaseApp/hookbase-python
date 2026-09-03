@@ -7,6 +7,7 @@ from .cron_jobs import (
     CreateCronJobParams,
     CronGroup,
     CronJob,
+    CronJobExecution,
     UpdateCronJobParams,
 )
 from .deliveries import (
@@ -123,6 +124,7 @@ __all__ = [
     "CreateCronJobParams",
     "CronGroup",
     "CronJob",
+    "CronJobExecution",
     "UpdateCronJobParams",
     # Deliveries
     "BulkReplayResult",

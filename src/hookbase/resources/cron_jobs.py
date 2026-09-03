@@ -13,6 +13,7 @@ from ..models.cron_jobs import (
     CreateCronJobParams,
     CronGroup,
     CronJob,
+    CronJobExecution,
     UpdateCronJobParams,
 )
 from ._base import AsyncResource, SyncResource, _to_body
@@ -48,6 +49,11 @@ class CronJobs(SyncResource):
 
     def delete(self, id: str) -> None:
         self._request("DELETE", f"/api/cron/{id}")
+
+    def trigger(self, id: str) -> CronJobExecution:
+        resp = self._request("POST", f"/api/cron/{id}/trigger")
+        data = resp.get("execution", resp)
+        return self._parse(CronJobExecution, data)
 
     def list_groups(self) -> list[CronGroup]:
         resp = self._request("GET", "/api/cron-groups")
@@ -91,6 +97,11 @@ class AsyncCronJobs(AsyncResource):
 
     async def delete(self, id: str) -> None:
         await self._request("DELETE", f"/api/cron/{id}")
+
+    async def trigger(self, id: str) -> CronJobExecution:
+        resp = await self._request("POST", f"/api/cron/{id}/trigger")
+        data = resp.get("execution", resp)
+        return self._parse(CronJobExecution, data)
 
     async def list_groups(self) -> list[CronGroup]:
         resp = await self._request("GET", "/api/cron-groups")
