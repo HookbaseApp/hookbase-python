@@ -272,10 +272,24 @@ def test_update_destination_params_throttle_serializes_camelcase():
 
 
 def test_test_destination(mock_api, client):
+    # The API answers with `status`/`latencyMs` (api/src/routes/destinations.ts), not
+    # `statusCode`/`duration` — the model aliases onto those field names explicitly.
     mock_api.post("/api/destinations/dst_1/test").respond(200, json={
-        "success": True, "statusCode": 200, "duration": 150.5,
+        "success": True, "status": 200, "latencyMs": 150.5, "responseBody": "OK",
     })
     result = client.destinations.test("dst_1")
     assert isinstance(result, TestResult)
     assert result.success is True
     assert result.status_code == 200
+    assert result.duration == 150.5
+    assert result.response_body == "OK"
+
+
+def test_test_destination_failure_surfaces_error(mock_api, client):
+    mock_api.post("/api/destinations/dst_1/test").respond(200, json={
+        "success": False, "error": "Network error",
+    })
+    result = client.destinations.test("dst_1")
+    assert result.success is False
+    assert result.error == "Network error"
+    assert result.status_code is None

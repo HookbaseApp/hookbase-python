@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from ._base import HookbaseModel
 
@@ -209,7 +209,10 @@ class UpdateDestinationParams(HookbaseModel):
 
 class TestResult(HookbaseModel):
     success: bool
-    status_code: int | None = None
-    duration: float | None = None
+    # The API answers with `status`/`latencyMs` (api/src/routes/destinations.ts), not the
+    # `statusCode`/`duration` that HookbaseModel's to_camel alias_generator would otherwise
+    # expect for these field names — override the alias explicitly rather than rely on it.
+    status_code: int | None = Field(default=None, alias="status")
+    duration: float | None = Field(default=None, alias="latencyMs")
     response_body: str | None = None
     error: str | None = None
