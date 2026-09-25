@@ -7,12 +7,28 @@ from pydantic import field_validator
 
 from ._base import HookbaseModel
 
+# Providers the API will accept for a source.
+#
+# Mirrors SUPPORTED_SIGNATURE_PROVIDERS in the API (api/src/utils/signature-schemes.ts), which
+# is derived from the signature scheme table rather than restated. Regenerate with
+# `npx tsx scripts/print-source-enums.ts` in the api package; do not hand-extend this Literal,
+# because a value the API does not accept is a 400 the type promised would not happen.
+#
+# Removed in the 2026-09 correction: "sendgrid", "mailgun" and "linear". All three were
+# advertised here from the beginning and none was ever accepted by the API. SendGrid signs with
+# ECDSA and Mailgun puts the signature in the POST body, so neither fits this scheme model;
+# Linear's scheme is real but unverified against its docs. Use "custom" for all three.
+#
+# "svix" is an alias of "standard-webhooks"; both resolve to the same scheme server-side.
 SourceProvider = Literal[
-    "generic", "github", "stripe", "shopify", "slack", "twilio",
-    "sendgrid", "mailgun", "paddle", "linear", "svix", "custom",
+    "bitbucket", "custom", "generic", "github", "gitlab", "heroku",
+    "lemonsqueezy", "paddle", "sentry", "shopify", "slack", "standard-webhooks",
+    "stripe", "svix", "twilio", "typeform", "zoom",
 ]
-DedupStrategy = Literal["none", "header", "payload_hash", "event_id"]
-IpFilterMode = Literal["none", "allowlist", "denylist"]
+# Corrected alongside SourceProvider: "header" and "event_id" were never accepted, and the three
+# values the API actually defaults to and documents were missing. "auto" is the default.
+DedupStrategy = Literal["auto", "provider_id", "payload_hash", "idempotency_key", "none"]
+IpFilterMode = Literal["none", "allowlist", "denylist", "both"]
 # HTTP verbs an ingest endpoint can be restricted to. OPTIONS is excluded: CORS preflight is
 # answered before ingest runs, so it is never gateable.
 IngestMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"]
