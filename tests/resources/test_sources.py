@@ -30,10 +30,13 @@ SOURCE_DATA = {
     "slug": "github",
     "provider": "github",
     "isActive": True,
-    "verifySignature": True,
+    "hasSigningSecret": True,
+    "signingSecretLast4": "...c123",
+    "rejectInvalidSignatures": True,
     "dedupStrategy": "none",
     "ipFilterMode": "none",
     "eventCount": 42,
+    "routeCount": 3,
     "createdAt": "2024-01-01T00:00:00Z",
     "updatedAt": "2024-01-01T00:00:00Z",
 }
@@ -158,7 +161,7 @@ def test_create_source_with_transient_mode(mock_api, client):
 
 
 def test_create_source_params_serialization():
-    params = CreateSourceParams(name="test", transient_mode=True)
+    params = CreateSourceParams(name="test", slug="test", transient_mode=True)
     dumped = params.model_dump(by_alias=True, exclude_none=True)
     assert dumped["transientMode"] is True
 
@@ -227,7 +230,7 @@ def test_source_allowed_methods_malformed_fails_open():
 
 
 def test_create_source_params_serializes_allowed_methods():
-    params = CreateSourceParams(name="s", allowed_methods=["GET", "POST"])
+    params = CreateSourceParams(name="s", slug="s", allowed_methods=["GET", "POST"])
     assert params.model_dump(by_alias=True, exclude_none=True)["allowedMethods"] == ["GET", "POST"]
 
 
