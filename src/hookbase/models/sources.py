@@ -21,9 +21,10 @@ from ._base import HookbaseModel
 #
 # "svix" is an alias of "standard-webhooks"; both resolve to the same scheme server-side.
 SourceProvider = Literal[
-    "bitbucket", "custom", "generic", "github", "gitlab", "heroku",
-    "lemonsqueezy", "paddle", "sentry", "shopify", "slack", "standard-webhooks",
-    "stripe", "svix", "twilio", "typeform", "zoom",
+    "airtable", "asana", "bitbucket", "calendly", "custom", "generic",
+    "github", "gitlab", "heroku", "intercom", "lemonsqueezy", "notion",
+    "paddle", "razorpay", "sentry", "shopify", "slack", "standard-webhooks",
+    "stripe", "svix", "twilio", "typeform", "workos", "zoom",
 ]
 # Corrected alongside SourceProvider: "header" and "event_id" were never accepted, and the three
 # values the API actually defaults to and documents were missing. "auto" is the default.
