@@ -40,6 +40,75 @@ _SLUG_EDGE_HYPHENS = re.compile(r"^-+|-+$")
 _SLUG_TRAILING_HYPHENS = re.compile(r"-+$")
 SLUG_MAX_LENGTH = 50
 
+# Which characters count as combining marks is a function of the Unicode version the *runtime*
+# ships, and the four SDKs' runtimes do not agree: CPython 3.12's `unicodedata` is Unicode 15.0,
+# while the reference implementation's `\p{Mn}` (V8) is a version ahead. Reading the category alone
+# therefore makes the same name slug differently depending on which SDK created the destination,
+# which is the thing this derivation exists to prevent.
+#
+# These two tables close that gap, generated from the reference runtime's own `\p{Mn}` compared
+# against Unicode 15.0's. Both self-heal: once this interpreter's tables cover the additions, the
+# set is redundant but harmless, and `test_slug_contract.py` says so when that happens.
+#
+# 75 code points in 21 ranges, the same table `slugMarkAdditions` carries in
+# sdk/go-sdk/slug_fold.go. Change one and you change both.
+_SLUG_MARK_ADDITIONS: frozenset[str] = frozenset(
+    chr(cp)
+    for lo, hi in (
+        ("\u0897", "\u0897"),
+        ("\u1acf", "\u1add"),
+        ("\u1ae0", "\u1aeb"),
+        ("\U00010d69", "\U00010d6d"),
+        ("\U00010efa", "\U00010efc"),
+        ("\U000113bb", "\U000113c0"),
+        ("\U000113ce", "\U000113ce"),
+        ("\U000113d0", "\U000113d0"),
+        ("\U000113d2", "\U000113d2"),
+        ("\U000113e1", "\U000113e2"),
+        ("\U00011b60", "\U00011b60"),
+        ("\U00011b62", "\U00011b64"),
+        ("\U00011b66", "\U00011b66"),
+        ("\U00011f5a", "\U00011f5a"),
+        ("\U0001611e", "\U00016129"),
+        ("\U0001612d", "\U0001612f"),
+        ("\U0001e5ee", "\U0001e5ef"),
+        ("\U0001e6e3", "\U0001e6e3"),
+        ("\U0001e6e6", "\U0001e6e6"),
+        ("\U0001e6ee", "\U0001e6ef"),
+        ("\U0001e6f5", "\U0001e6f5"),
+    )
+    for cp in range(ord(lo), ord(hi) + 1)
+)
+
+# The correction in the other direction: AHOM CONSONANT SIGN MEDIAL RA was Mn in Unicode 15.0 and
+# is Mc (a *spacing* mark) from 15.1, so the reference does not strip it and neither may this
+# SDK -- it has to separate, the way any other non-alphanumeric does.
+_SLUG_MARK_RECLASSIFIED = "\U0001171e"
+
+
+# The same version skew, one layer down: NFKD itself. These characters are unassigned in Unicode
+# 15.0, so this interpreter leaves them alone and they become hyphen separators, while the
+# reference runtime decomposes them to ASCII letters and digits. Folding them first makes NFKD's
+# answer the same on both. Every mapping is the reference's own NFKD output, not a guess at the
+# character's meaning; a later interpreter that knows them decomposes them identically, so this
+# stays a no-op rather than a divergence of its own.
+#
+#   U+A7F1              Latin Extended-D, decomposes to "S"
+#   U+1CCD6 - U+1CCF9   36 contiguous additions in Symbols for Legacy Computing Supplement,
+#                       decomposing to A-Z and then 0-9 in order
+_SLUG_FOLD_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+_SLUG_FOLD_ADDITIONS = {
+    0xA7F1: "S",
+    **{0x1CCD6 + offset: char for offset, char in enumerate(_SLUG_FOLD_ALPHABET)},
+}
+
+
+def _is_slug_mark(char: str) -> bool:
+    """Whether `char` is a combining mark the slug fold drops. See the tables above."""
+    if char == _SLUG_MARK_RECLASSIFIED:
+        return False
+    return unicodedata.category(char) == "Mn" or char in _SLUG_MARK_ADDITIONS
+
 
 def dump(params: Any) -> dict[str, Any]:
     """Serialize a params model into a wire body, or copy a caller's dict.
@@ -126,8 +195,10 @@ def derive_destination_slug(name: str) -> str:
     # Drop the whole Mn category, not just the U+0300-U+036F block: a mark outside that block
     # (Arabic, Hebrew, Devanagari) would otherwise survive to become a hyphen separator, and the
     # same name would slug differently depending on which SDK created the destination.
-    decomposed = unicodedata.normalize("NFKD", name)
-    folded = "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn").lower()
+    # `_is_slug_mark` rather than the category alone, because the category answer depends on this
+    # interpreter's Unicode version -- see the tables above it.
+    decomposed = unicodedata.normalize("NFKD", name.translate(_SLUG_FOLD_ADDITIONS))
+    folded = "".join(ch for ch in decomposed if not _is_slug_mark(ch)).lower()
     slug = _SLUG_EDGE_HYPHENS.sub("", _SLUG_SEPARATORS.sub("-", folded))
     slug = _SLUG_TRAILING_HYPHENS.sub("", slug[:SLUG_MAX_LENGTH])
 

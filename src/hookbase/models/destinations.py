@@ -227,7 +227,12 @@ class CreateDestinationParams(HookbaseModel):
     have no description column."""
     timeout: int | None = None
     """Deprecated: renamed to `timeout_ms`. The value is sent under that name
-    unchanged, and `timeout_ms` wins if both are set."""
+    unchanged, and `timeout_ms` wins if both are set.
+
+    Milliseconds, 1000-60000, as everywhere else in this SDK. The value was not
+    reaching the API before, so a call that passed seconds here landed on the
+    30000 default and now 400s instead; multiply by 1000.
+    """
     retry_count: int | None = None
     """Deprecated: never accepted by the API and no longer sent; retries are
     configured per route, not per destination."""
@@ -258,7 +263,12 @@ class UpdateDestinationParams(HookbaseModel):
     """Deprecated: never accepted by the API and no longer sent."""
     timeout: int | None = None
     """Deprecated: renamed to `timeout_ms`. The value is sent under that name
-    unchanged, and `timeout_ms` wins if both are set."""
+    unchanged, and `timeout_ms` wins if both are set.
+
+    Milliseconds, 1000-60000, as everywhere else in this SDK. The value was not
+    reaching the API before, so a call that passed seconds here landed on the
+    30000 default and now 400s instead; multiply by 1000.
+    """
     retry_count: int | None = None
     """Deprecated: never accepted by the API and no longer sent."""
     retry_interval: int | None = None
