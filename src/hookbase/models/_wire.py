@@ -34,7 +34,7 @@ _CAMEL_BOUNDARY = re.compile(r"(?<!^)(?=[A-Z])")
 # Slug derivation mirrors `deriveDestinationSlug` in
 # sdk/node-sdk/src/resources/wire.ts step for step, so all four SDKs derive
 # byte-identical slugs from the same name. Keep the two in sync.
-_COMBINING_MARKS = re.compile(r"[̀-ͯ]")
+
 _SLUG_SEPARATORS = re.compile(r"[^a-z0-9]+")
 _SLUG_EDGE_HYPHENS = re.compile(r"^-+|-+$")
 _SLUG_TRAILING_HYPHENS = re.compile(r"-+$")
@@ -123,7 +123,11 @@ def derive_destination_slug(name: str) -> str:
         HookbaseError: if the name has no alphanumeric characters to derive
             from, rather than sending a slug the API would reject.
     """
-    folded = _COMBINING_MARKS.sub("", unicodedata.normalize("NFKD", name)).lower()
+    # Drop the whole Mn category, not just the U+0300-U+036F block: a mark outside that block
+    # (Arabic, Hebrew, Devanagari) would otherwise survive to become a hyphen separator, and the
+    # same name would slug differently depending on which SDK created the destination.
+    decomposed = unicodedata.normalize("NFKD", name)
+    folded = "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn").lower()
     slug = _SLUG_EDGE_HYPHENS.sub("", _SLUG_SEPARATORS.sub("-", folded))
     slug = _SLUG_TRAILING_HYPHENS.sub("", slug[:SLUG_MAX_LENGTH])
 
