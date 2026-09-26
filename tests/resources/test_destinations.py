@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 import respx
 
 from hookbase import Hookbase
+from hookbase.errors import HookbaseError
 from hookbase.models import (
     CreateDestinationParams,
     Destination,
@@ -13,7 +16,7 @@ from hookbase.models import (
     UpdateDestinationParams,
 )
 
-from ..conftest import make_paginated_response
+from ..conftest import make_paginated_response, sent_body
 
 
 @pytest.fixture
@@ -38,9 +41,7 @@ DEST_DATA = {
     "url": "https://example.com/webhooks",
     "method": "POST",
     "authType": "none",
-    "timeout": 30,
-    "retryCount": 3,
-    "retryInterval": 60,
+    "timeoutMs": 30000,
     "isActive": True,
     "config": None,
     "fieldMapping": None,
@@ -58,9 +59,7 @@ S3_DEST_DATA = {
     "url": "",
     "method": "POST",
     "authType": "none",
-    "timeout": 30,
-    "retryCount": 3,
-    "retryInterval": 60,
+    "timeoutMs": 30000,
     "isActive": True,
     "config": {
         "bucket": "my-webhooks",
@@ -293,3 +292,193 @@ def test_test_destination_failure_surfaces_error(mock_api, client):
     assert result.success is False
     assert result.error == "Network error"
     assert result.status_code is None
+
+
+# The API requires `slug` (`^[a-z0-9-]+$`, max 50); the SDK leaves it optional
+# and derives one from `name` rather than letting the request 400.
+SLUG_PATTERN = re.compile(r"^[a-z0-9-]+$")
+
+
+def test_create_destination_derives_a_slug_from_the_name(mock_api, client):
+    route = mock_api.post("/api/destinations").respond(200, json={"destination": DEST_DATA})
+    client.destinations.create({"name": "My  Backend (EU)!", "url": "https://example.com/hooks"})
+    slug = sent_body(route)["slug"]
+    assert slug == "my-backend-eu"
+    assert SLUG_PATTERN.fullmatch(slug)
+
+
+def test_create_destination_derived_slug_folds_accents(mock_api, client):
+    """NFKD-fold first, so `Café EU` gives `cafe-eu`, not `caf-eu`. This is one
+    of the two places the four SDKs' slug derivations drift apart."""
+    route = mock_api.post("/api/destinations").respond(200, json={"destination": DEST_DATA})
+    client.destinations.create({"name": "Café EU", "url": "https://example.com/hooks"})
+    slug = sent_body(route)["slug"]
+    assert slug == "cafe-eu"
+    assert SLUG_PATTERN.fullmatch(slug)
+
+
+def test_create_destination_derived_slug_truncates_mid_word(mock_api, client):
+    """Truncation to 50 is a plain cut and may land mid-word. Word-wrapping or
+    trimming back to a boundary would make this SDK disagree with the others,
+    so the cut stays plain — the other place the derivations drift."""
+    route = mock_api.post("/api/destinations").respond(200, json={"destination": DEST_DATA})
+    client.destinations.create({
+        "name": "Warehouse archive for the EU region running well past the fifty character limit",
+        "url": "https://example.com/hooks",
+    })
+    slug = sent_body(route)["slug"]
+    assert slug == "warehouse-archive-for-the-eu-region-running-well-p"
+    assert len(slug) == 50
+    assert SLUG_PATTERN.fullmatch(slug)
+
+
+def test_create_destination_derived_slug_drops_a_hyphen_left_by_truncation(mock_api, client):
+    route = mock_api.post("/api/destinations").respond(200, json={"destination": DEST_DATA})
+    client.destinations.create({
+        "name": "Warehouse archive for the EU region well past the limit",
+        "url": "https://example.com/hooks",
+    })
+    slug = sent_body(route)["slug"]
+    assert slug == "warehouse-archive-for-the-eu-region-well-past-the"
+    assert not slug.endswith("-")
+    assert SLUG_PATTERN.fullmatch(slug)
+
+
+def test_create_destination_derived_slug_fits_the_api_limit(mock_api, client):
+    route = mock_api.post("/api/destinations").respond(200, json={"destination": DEST_DATA})
+    client.destinations.create({"name": "A" * 80, "url": "https://example.com/hooks"})
+    slug = sent_body(route)["slug"]
+    assert len(slug) == 50
+    assert SLUG_PATTERN.fullmatch(slug)
+
+
+def test_create_destination_with_an_underivable_name(mock_api, client):
+    """A name with no alphanumerics cannot produce a valid slug; say so instead
+    of sending one the API would reject."""
+    with pytest.raises(HookbaseError, match="pass `slug` explicitly"):
+        client.destinations.create({"name": "\u2603\u2603\u2603", "url": "https://example.com/hooks"})
+    # No route is registered: the failure has to come before the request.
+    assert not mock_api.calls
+
+
+def test_create_destination_derives_a_slug_over_a_blank_one(mock_api, client):
+    route = mock_api.post("/api/destinations").respond(200, json={"destination": DEST_DATA})
+    client.destinations.create({
+        "name": "My Backend", "slug": "   ", "url": "https://example.com/hooks",
+    })
+    assert sent_body(route)["slug"] == "my-backend"
+
+
+def test_create_destination_keeps_an_explicit_slug(mock_api, client):
+    route = mock_api.post("/api/destinations").respond(200, json={"destination": DEST_DATA})
+    client.destinations.create(CreateDestinationParams(
+        name="My Backend", slug="chosen-slug", url="https://example.com/hooks",
+    ))
+    assert sent_body(route)["slug"] == "chosen-slug"
+
+
+def test_create_destination_drops_deprecated_fields(mock_api, client):
+    """`description`, `retryCount` and `retryInterval` were never accepted."""
+    route = mock_api.post("/api/destinations").respond(200, json={"destination": DEST_DATA})
+    client.destinations.create(CreateDestinationParams(
+        name="Backend",
+        slug="backend",
+        url="https://example.com/hooks",
+        description="Forwards to the monolith",
+        retry_count=3,
+        retry_interval=60,
+    ))
+    assert sent_body(route) == {
+        "name": "Backend",
+        "slug": "backend",
+        "url": "https://example.com/hooks",
+    }
+
+
+def test_create_destination_renames_timeout(mock_api, client):
+    route = mock_api.post("/api/destinations").respond(200, json={"destination": DEST_DATA})
+    client.destinations.create({
+        "name": "Backend", "slug": "backend", "url": "https://example.com/hooks",
+        "timeout": 5000,
+    })
+    body = sent_body(route)
+    assert body["timeoutMs"] == 5000
+    assert "timeout" not in body
+
+
+def test_create_destination_timeout_ms_wins_over_timeout(mock_api, client):
+    route = mock_api.post("/api/destinations").respond(200, json={"destination": DEST_DATA})
+    client.destinations.create(CreateDestinationParams(
+        name="Backend", slug="backend", url="https://example.com/hooks",
+        timeout=5000, timeout_ms=12000,
+    ))
+    body = sent_body(route)
+    assert body["timeoutMs"] == 12000
+    assert "timeout" not in body
+
+
+def test_create_destination_full_body(mock_api, client):
+    route = mock_api.post("/api/destinations").respond(200, json={"destination": DEST_DATA})
+    client.destinations.create(CreateDestinationParams(
+        name="Backend",
+        slug="backend",
+        url="https://example.com/hooks",
+        method="POST",
+        headers={"X-Api-Key": "secret"},
+        auth_type="bearer",
+        auth_config={"token": "t"},
+        timeout_ms=15000,
+        throttle=Throttle(mode="rate", rate_limit=10, rate_unit="minute"),
+        use_static_ip=True,
+        batch_size=10,
+        batch_window_seconds=5,
+    ))
+    assert sent_body(route) == {
+        "name": "Backend",
+        "slug": "backend",
+        "url": "https://example.com/hooks",
+        "method": "POST",
+        # Destination headers really are a mapping here, unlike endpoint headers.
+        "headers": {"X-Api-Key": "secret"},
+        "authType": "bearer",
+        "authConfig": {"token": "t"},
+        "timeoutMs": 15000,
+        "throttle": {"mode": "rate", "rateLimit": 10, "rateUnit": "minute"},
+        "useStaticIp": True,
+        "batchSize": 10,
+        "batchWindowSeconds": 5,
+    }
+
+
+def test_update_destination_applies_the_same_fixups(mock_api, client):
+    route = mock_api.patch("/api/destinations/dst_1").respond(200, json={"destination": DEST_DATA})
+    client.destinations.update("dst_1", UpdateDestinationParams(
+        name="Backend v2",
+        description="ignored",
+        timeout=9000,
+        retry_count=5,
+        retry_interval=30,
+        is_active=False,
+    ))
+    assert sent_body(route) == {
+        "name": "Backend v2",
+        "timeoutMs": 9000,
+        "isActive": False,
+    }
+
+
+def test_update_destination_sends_no_slug(mock_api, client):
+    """A destination's slug cannot be changed, and PATCH does not read one."""
+    route = mock_api.patch("/api/destinations/dst_1").respond(200, json={"destination": DEST_DATA})
+    client.destinations.update("dst_1", {"name": "Backend v2"})
+    assert sent_body(route) == {"name": "Backend v2"}
+
+
+def test_destination_response_exposes_timeout_ms(mock_api, client):
+    mock_api.get("/api/destinations/dst_1").respond(200, json={"destination": {
+        **DEST_DATA, "timeoutMs": 45000,
+    }})
+    dest = client.destinations.get("dst_1")
+    assert dest.timeout_ms == 45000
+    # The deprecated field mirrors it rather than sitting at a stale default.
+    assert dest.timeout == 45000

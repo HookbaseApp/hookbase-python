@@ -21,7 +21,7 @@ dest = client.destinations.create({
     "slug": "backend",
     "url": "https://api.example.com/webhooks",
     "method": "POST",
-    "retryCount": 3,
+    "timeoutMs": 30000,
 })
 print(f"Destination created: {dest.id}")
 

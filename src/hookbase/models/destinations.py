@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from . import _wire
 from ._base import HookbaseModel
 
 HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
@@ -72,16 +73,13 @@ class Destination(HookbaseModel):
     organization_id: str | None = None
     name: str
     slug: str
-    description: str | None = None
     type: DestinationType = "http"
     url: str = ""
     method: HttpMethod = "POST"
     headers: dict[str, str] | None = None
     auth_type: str | None = "none"
     auth_config: dict[str, Any] | None = None
-    timeout: int = 30
-    retry_count: int = 3
-    retry_interval: int = 60
+    timeout_ms: int = 30000
     throttle: Throttle | None = None
     is_active: bool = True
     use_static_ip: bool = True
@@ -93,6 +91,35 @@ class Destination(HookbaseModel):
     last_delivery_at: str | None = None
     created_at: str = ""
     updated_at: str = ""
+
+    # Deprecated response fields. The API returns none of these — destinations
+    # have no description or per-destination retry columns, and the request
+    # timeout comes back as `timeoutMs` — so `description`/`retry_count`/
+    # `retry_interval` are always the defaults below. Kept so existing
+    # attribute access keeps working.
+    description: str | None = None
+    """Deprecated: destinations have no description column."""
+    timeout: int = 30000
+    """Deprecated: read `timeout_ms` instead. Mirrors it (milliseconds) when
+    the response carries no `timeout` of its own."""
+    retry_count: int = 3
+    """Deprecated: retries are configured per route, not per destination."""
+    retry_interval: int = 60
+    """Deprecated: retries are configured per route, not per destination."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _mirror_timeout(cls, data: Any) -> Any:
+        """Keep the deprecated `timeout` field showing the real timeout.
+
+        The API answers with `timeoutMs`; `timeout` is only the old name for
+        the same number, so populate it from `timeoutMs` when the response has
+        no `timeout` of its own.
+        """
+        if isinstance(data, dict) and "timeoutMs" in data and "timeout" not in data:
+            data = dict(data)
+            data["timeout"] = data["timeoutMs"]
+        return data
 
     @model_validator(mode="before")
     @classmethod
@@ -169,16 +196,23 @@ class Destination(HookbaseModel):
 class CreateDestinationParams(HookbaseModel):
     name: str
     slug: str | None = None
-    description: str | None = None
+    """URL-safe identifier, `^[a-z0-9-]+$`, max 50 characters.
+
+    Required by the API. Omit it and one is derived from `name` rather than
+    letting the request 400 — pass it explicitly whenever the slug matters,
+    since it is part of how the destination is addressed and cannot be changed
+    afterwards.
+    """
     type: DestinationType | None = None
     url: str | None = None
     method: HttpMethod | None = None
     headers: dict[str, str] | None = None
+    """Sent as a mapping — the shape the destinations API takes, unlike
+    endpoint headers."""
     auth_type: AuthType | None = None
     auth_config: dict[str, Any] | None = None
-    timeout: int | None = None
-    retry_count: int | None = None
-    retry_interval: int | None = None
+    timeout_ms: int | None = None
+    """Request timeout in milliseconds, 1000-60000. The API defaults to 30000."""
     throttle: Throttle | None = None
     config: dict[str, Any] | None = None
     field_mapping: list[FieldMapping] | None = None
@@ -186,18 +220,31 @@ class CreateDestinationParams(HookbaseModel):
     batch_size: int | None = None
     batch_window_seconds: int | None = None
 
+    # Deprecated fields; see `create_destination_body` for what each one does
+    # on the wire.
+    description: str | None = None
+    """Deprecated: never accepted by the API and no longer sent; destinations
+    have no description column."""
+    timeout: int | None = None
+    """Deprecated: renamed to `timeout_ms`. The value is sent under that name
+    unchanged, and `timeout_ms` wins if both are set."""
+    retry_count: int | None = None
+    """Deprecated: never accepted by the API and no longer sent; retries are
+    configured per route, not per destination."""
+    retry_interval: int | None = None
+    """Deprecated: never accepted by the API and no longer sent; retries are
+    configured per route, not per destination."""
+
 
 class UpdateDestinationParams(HookbaseModel):
     name: str | None = None
-    description: str | None = None
     url: str | None = None
     method: HttpMethod | None = None
     headers: dict[str, str] | None = None
     auth_type: AuthType | None = None
     auth_config: dict[str, Any] | None = None
-    timeout: int | None = None
-    retry_count: int | None = None
-    retry_interval: int | None = None
+    timeout_ms: int | None = None
+    """Request timeout in milliseconds, 1000-60000."""
     throttle: Throttle | None = None
     is_active: bool | None = None
     config: dict[str, Any] | None = None
@@ -205,6 +252,57 @@ class UpdateDestinationParams(HookbaseModel):
     use_static_ip: bool | None = None
     batch_size: int | None = None
     batch_window_seconds: int | None = None
+
+    # Deprecated fields; see `CreateDestinationParams` for each one's status.
+    description: str | None = None
+    """Deprecated: never accepted by the API and no longer sent."""
+    timeout: int | None = None
+    """Deprecated: renamed to `timeout_ms`. The value is sent under that name
+    unchanged, and `timeout_ms` wins if both are set."""
+    retry_count: int | None = None
+    """Deprecated: never accepted by the API and no longer sent."""
+    retry_interval: int | None = None
+    """Deprecated: never accepted by the API and no longer sent."""
+
+
+def _strip_deprecated(body: dict[str, Any]) -> None:
+    """Apply the rules shared by destination create and update bodies."""
+    _wire.drop(body, "description", "retryCount", "retryInterval")
+    _wire.rename(body, "timeout", "timeoutMs")
+
+
+def create_destination_body(
+    params: CreateDestinationParams | dict[str, Any],
+) -> dict[str, Any]:
+    """Build the request body for `POST /api/destinations`.
+
+    `slug` is required by the API (`^[a-z0-9-]+$`, max 50) but has always been
+    optional here, so a request that omits it 400s. Derive one from `name`
+    instead of letting that happen; an explicit slug is never rewritten.
+    """
+    body = _wire.dump(params)
+    _strip_deprecated(body)
+    slug = body.get("slug")
+    if slug is None or (isinstance(slug, str) and not slug.strip()):
+        name = body.get("name")
+        # A missing or non-string `name` is the API's own `name` error to
+        # report, not a slug that could not be derived.
+        if isinstance(name, str):
+            body["slug"] = _wire.derive_destination_slug(name)
+    return body
+
+
+def update_destination_body(
+    params: UpdateDestinationParams | dict[str, Any],
+) -> dict[str, Any]:
+    """Build the request body for `PATCH /api/destinations/:id`.
+
+    Unlike create, the API takes no `slug` here — a destination's slug cannot
+    be changed after it is created.
+    """
+    body = _wire.dump(params)
+    _strip_deprecated(body)
+    return body
 
 
 class TestResult(HookbaseModel):

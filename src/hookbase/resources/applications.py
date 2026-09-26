@@ -12,8 +12,28 @@ from ..models.applications import (
     Application,
     CreateApplicationParams,
     UpdateApplicationParams,
+    application_body,
 )
 from ._base import AsyncResource, SyncResource, _to_body
+
+# Upserts live on their own route; `PUT /api/webhook-applications` is not a
+# route at all and 404s.
+UPSERT_PATH = "/api/webhook-applications/upsert"
+
+
+def _require_external_id(body: dict[str, Any]) -> dict[str, Any]:
+    """Fail before the request when the upsert has nothing to match on.
+
+    `upsertApplicationSchema` requires a non-empty `externalId` and is already
+    `.strict()`, so a missing one is a 400 with a schema dump; say what is
+    wrong instead.
+    """
+    if not body.get("externalId"):
+        raise ValueError(
+            "upsert requires a non-empty external_id (the application's identifier "
+            "in your own system); use create() for an application without one"
+        )
+    return body
 
 
 class Applications(SyncResource):
@@ -41,14 +61,20 @@ class Applications(SyncResource):
         return self._parse(Application, data)
 
     def create(self, params: CreateApplicationParams | dict[str, Any]) -> Application:
-        body = _to_body(params)
+        body = application_body(params)
         resp = self._request("POST", "/api/webhook-applications", json=body)
         data = resp.get("data", resp)
         return self._parse(Application, data)
 
     def upsert(self, params: CreateApplicationParams | dict[str, Any]) -> tuple[Application, bool]:
-        body = _to_body(params)
-        resp = self._request("PUT", "/api/webhook-applications", json=body)
+        """Create an application, or update the one with the same external ID.
+
+        The external ID is what identifies the application to upsert, so it is
+        required here even though `CreateApplicationParams` leaves it optional
+        for plain creates.
+        """
+        body = _require_external_id(application_body(params))
+        resp = self._request("PUT", UPSERT_PATH, json=body)
         data = resp.get("data", resp)
         created = resp.get("created", False)
         return self._parse(Application, data), created
@@ -90,7 +116,7 @@ class AsyncApplications(AsyncResource):
         return self._parse(Application, data)
 
     async def create(self, params: CreateApplicationParams | dict[str, Any]) -> Application:
-        body = _to_body(params)
+        body = application_body(params)
         resp = await self._request("POST", "/api/webhook-applications", json=body)
         data = resp.get("data", resp)
         return self._parse(Application, data)
@@ -98,8 +124,14 @@ class AsyncApplications(AsyncResource):
     async def upsert(
         self, params: CreateApplicationParams | dict[str, Any],
     ) -> tuple[Application, bool]:
-        body = _to_body(params)
-        resp = await self._request("PUT", "/api/webhook-applications", json=body)
+        """Create an application, or update the one with the same external ID.
+
+        The external ID is what identifies the application to upsert, so it is
+        required here even though `CreateApplicationParams` leaves it optional
+        for plain creates.
+        """
+        body = _require_external_id(application_body(params))
+        resp = await self._request("PUT", UPSERT_PATH, json=body)
         data = resp.get("data", resp)
         created = resp.get("created", False)
         return self._parse(Application, data), created

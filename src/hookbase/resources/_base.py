@@ -5,14 +5,20 @@ from typing import Any, TypeVar
 from pydantic import TypeAdapter
 
 from .._client import AsyncTransport, SyncTransport
+from ..models import _wire
 
 T = TypeVar("T")
 
 
 def _to_body(params: Any) -> Any:
-    """Convert a Pydantic model or dict to a JSON-serializable dict."""
+    """Convert a Pydantic model or dict to a JSON-serializable dict.
+
+    Resources whose request body needs renaming or pruning to match what the
+    API accepts build it with a dedicated body builder in the matching models
+    module instead (see `models/_wire.py`).
+    """
     if hasattr(params, "model_dump"):
-        return params.model_dump(by_alias=True, exclude_none=True)
+        return _wire.dump(params)
     return params
 
 

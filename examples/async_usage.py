@@ -29,7 +29,7 @@ async def main():
         # Paginate through all applications
         page = await client.outbound.applications.list(limit=10)
         async for app in page.auto_paging_iter():
-            print(f"  App: {app.name} (uid={app.uid})")
+            print(f"  App: {app.name} (externalId={app.external_id})")
 
 
 if __name__ == "__main__":

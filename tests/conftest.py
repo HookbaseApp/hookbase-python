@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -31,6 +32,11 @@ def async_client(mock_api):
     """Create an async Hookbase client with mocked transport."""
     c = AsyncHookbase(api_key=TEST_API_KEY)
     yield c
+
+
+def sent_body(route: Any) -> Any:
+    """The exact JSON body the SDK put on the wire for a respx route's last call."""
+    return json.loads(route.calls.last.request.content)
 
 
 def make_paginated_response(

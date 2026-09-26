@@ -7,7 +7,7 @@ client = Hookbase(api_key="whr_your_api_key")
 # Create an application (represents a customer/tenant)
 app = client.outbound.applications.create({
     "name": "Acme Corp",
-    "uid": "cust_123",
+    "externalId": "cust_123",
     "metadata": {"plan": "pro"},
 })
 print(f"Application: {app.id}")

@@ -14,8 +14,9 @@ from ..models.endpoints import (
     RotateSecretResult,
     UpdateEndpointParams,
     WebhookEndpoint,
+    endpoint_body,
 )
-from ._base import AsyncResource, SyncResource, _to_body
+from ._base import AsyncResource, SyncResource
 
 
 class Endpoints(SyncResource):
@@ -44,14 +45,14 @@ class Endpoints(SyncResource):
     def create(
         self, application_id: str, params: CreateEndpointParams | dict[str, Any]
     ) -> EndpointWithSecret:
-        body = dict(_to_body(params))
+        body = endpoint_body(params)
         body["applicationId"] = application_id
         resp = self._request("POST", "/api/webhook-endpoints", json=body)
         data = resp.get("data", resp)
         return self._parse(EndpointWithSecret, data)
 
     def update(self, id: str, params: UpdateEndpointParams | dict[str, Any]) -> WebhookEndpoint:
-        body = _to_body(params)
+        body = endpoint_body(params)
         resp = self._request("PATCH", f"/api/webhook-endpoints/{id}", json=body)
         data = resp.get("data", resp)
         return self._parse(WebhookEndpoint, data)
@@ -60,9 +61,14 @@ class Endpoints(SyncResource):
         self._request("DELETE", f"/api/webhook-endpoints/{id}")
 
     def rotate_secret(self, id: str, *, grace_period: int | None = None) -> RotateSecretResult:
+        """Rotate an endpoint's signing secret.
+
+        `grace_period` is in seconds (0-86400) and goes on the wire as
+        `gracePeriodSeconds`, which is the only name the API reads.
+        """
         body: dict[str, Any] = {}
         if grace_period is not None:
-            body["gracePeriod"] = grace_period
+            body["gracePeriodSeconds"] = grace_period
         resp = self._request(
             "POST", f"/api/webhook-endpoints/{id}/rotate-secret",
             json=body or None,
@@ -106,7 +112,7 @@ class AsyncEndpoints(AsyncResource):
     async def create(
         self, application_id: str, params: CreateEndpointParams | dict[str, Any]
     ) -> EndpointWithSecret:
-        body = dict(_to_body(params))
+        body = endpoint_body(params)
         body["applicationId"] = application_id
         resp = await self._request("POST", "/api/webhook-endpoints", json=body)
         data = resp.get("data", resp)
@@ -115,7 +121,7 @@ class AsyncEndpoints(AsyncResource):
     async def update(
         self, id: str, params: UpdateEndpointParams | dict[str, Any],
     ) -> WebhookEndpoint:
-        body = _to_body(params)
+        body = endpoint_body(params)
         resp = await self._request("PATCH", f"/api/webhook-endpoints/{id}", json=body)
         data = resp.get("data", resp)
         return self._parse(WebhookEndpoint, data)
@@ -126,9 +132,14 @@ class AsyncEndpoints(AsyncResource):
     async def rotate_secret(
         self, id: str, *, grace_period: int | None = None,
     ) -> RotateSecretResult:
+        """Rotate an endpoint's signing secret.
+
+        `grace_period` is in seconds (0-86400) and goes on the wire as
+        `gracePeriodSeconds`, which is the only name the API reads.
+        """
         body: dict[str, Any] = {}
         if grace_period is not None:
-            body["gracePeriod"] = grace_period
+            body["gracePeriodSeconds"] = grace_period
         resp = await self._request(
             "POST", f"/api/webhook-endpoints/{id}/rotate-secret",
             json=body or None,

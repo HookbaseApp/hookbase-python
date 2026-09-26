@@ -94,7 +94,7 @@ client.schemas.create({"name": "OrderSchema", "jsonSchema": {"type": "object", .
 
 ```python
 # Applications
-client.outbound.applications.create({"name": "Acme", "uid": "cust_123"})
+client.outbound.applications.create({"name": "Acme", "externalId": "cust_123"})
 client.outbound.applications.get_by_external_id("cust_123")
 
 # Endpoints

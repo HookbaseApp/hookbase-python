@@ -14,8 +14,10 @@ from ..models.destinations import (
     Destination,
     TestResult,
     UpdateDestinationParams,
+    create_destination_body,
+    update_destination_body,
 )
-from ._base import AsyncResource, SyncResource, _to_body
+from ._base import AsyncResource, SyncResource
 
 
 class Destinations(SyncResource):
@@ -40,12 +42,12 @@ class Destinations(SyncResource):
         return self._parse(Destination, resp.get("destination", resp))
 
     def create(self, params: CreateDestinationParams | dict[str, Any]) -> Destination:
-        body = _to_body(params)
+        body = create_destination_body(params)
         resp = self._request("POST", "/api/destinations", json=body)
         return self._parse(Destination, resp.get("destination", resp))
 
     def update(self, id: str, params: UpdateDestinationParams | dict[str, Any]) -> None:
-        body = _to_body(params)
+        body = update_destination_body(params)
         self._request("PATCH", f"/api/destinations/{id}", json=body)
 
     def delete(self, id: str) -> None:
@@ -100,12 +102,12 @@ class AsyncDestinations(AsyncResource):
         return self._parse(Destination, resp.get("destination", resp))
 
     async def create(self, params: CreateDestinationParams | dict[str, Any]) -> Destination:
-        body = _to_body(params)
+        body = create_destination_body(params)
         resp = await self._request("POST", "/api/destinations", json=body)
         return self._parse(Destination, resp.get("destination", resp))
 
     async def update(self, id: str, params: UpdateDestinationParams | dict[str, Any]) -> None:
-        body = _to_body(params)
+        body = update_destination_body(params)
         await self._request("PATCH", f"/api/destinations/{id}", json=body)
 
     async def delete(self, id: str) -> None:

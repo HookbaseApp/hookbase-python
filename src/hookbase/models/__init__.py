@@ -42,7 +42,9 @@ from .dlq import (
     DlqStats,
 )
 from .endpoints import (
+    BackoffType,
     CreateEndpointParams,
+    CustomHeader,
     EndpointStats,
     EndpointWithSecret,
     RotateSecretResult,
@@ -155,7 +157,9 @@ __all__ = [
     "DlqRetryResult",
     "DlqStats",
     # Endpoints
+    "BackoffType",
     "CreateEndpointParams",
+    "CustomHeader",
     "EndpointStats",
     "EndpointWithSecret",
     "RotateSecretResult",
