@@ -42,7 +42,9 @@ from .dlq import (
     DlqStats,
 )
 from .endpoints import (
+    CLEARABLE_ENDPOINT_FIELDS,
     BackoffType,
+    ClearableEndpointField,
     CreateEndpointParams,
     CustomHeader,
     EndpointStats,
@@ -157,7 +159,9 @@ __all__ = [
     "DlqRetryResult",
     "DlqStats",
     # Endpoints
+    "CLEARABLE_ENDPOINT_FIELDS",
     "BackoffType",
+    "ClearableEndpointField",
     "CreateEndpointParams",
     "CustomHeader",
     "EndpointStats",

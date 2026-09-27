@@ -101,6 +101,10 @@ client.outbound.applications.get_by_external_id("cust_123")
 client.outbound.endpoints.create("app_id", {"url": "https://..."})
 client.outbound.endpoints.rotate_secret("ep_id", grace_period=3600)
 
+# An unset field is left alone by an update, so `None` cannot also mean "reset
+# this". Name the setting in `clear` to send an explicit null for it:
+client.outbound.endpoints.update("ep_id", {"clear": ["retryDelays"]})
+
 # Event Types & Subscriptions
 client.outbound.event_types.create({"name": "order.created", "category": "orders"})
 client.outbound.subscriptions.create({"endpointId": "ep_id", "eventTypeId": "et_id"})

@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+from collections.abc import Iterable
 from typing import Any
 
 from ..errors import HookbaseError
@@ -156,6 +157,47 @@ def rename(body: dict[str, Any], old: str, new: str) -> None:
             del body[spelling]
     if found and new not in body:
         body[new] = value
+
+
+def apply_clear(body: dict[str, Any], allowed: tuple[str, ...], what: str) -> None:
+    """Turn a params model's `clear` list into explicit JSON nulls on the body.
+
+    Every optional field on every params model is `X | None = None`, and `dump`
+    excludes `None` -- so `None` means "leave this setting alone" and there is
+    nothing left to mean "reset it", even where the API accepts an explicit
+    null. A caller who had set a custom retry schedule could not remove it.
+
+    `clear` closes that: naming a field puts `null` on the wire for it. Only
+    the fields in `allowed` are accepted, and a field both set and cleared is
+    an error rather than a silent choice between the two. `clear` itself never
+    reaches the API.
+    """
+    requested: Any = None
+    for spelling in _spellings("clear"):
+        if spelling in body:
+            requested = body.pop(spelling)
+
+    if requested is None:
+        return
+    if isinstance(requested, str) or not isinstance(requested, Iterable):
+        raise HookbaseError(
+            f"`clear` takes a list of {what} field names, not {type(requested).__name__}."
+        )
+
+    for field in requested:
+        key = _CAMEL_BOUNDARY.sub("_", str(field)).lower()
+        wire = {_CAMEL_BOUNDARY.sub("_", name).lower(): name for name in allowed}.get(key)
+        if wire is None:
+            raise HookbaseError(
+                f"`clear` names {str(field)!r}, which is not one of the {what} fields the API "
+                f"accepts a null for. It accepts: {', '.join(sorted(allowed))}."
+            )
+        if wire in body:
+            raise HookbaseError(
+                f"`clear` names {str(field)!r} but that field is also set; clear it or set it, "
+                "not both."
+            )
+        body[wire] = None
 
 
 def headers_to_pairs(body: dict[str, Any]) -> None:
