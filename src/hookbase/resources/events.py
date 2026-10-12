@@ -26,6 +26,11 @@ class Events(SyncResource):
         signature_valid: str | None = None,
         status: str | None = None,
     ) -> SyncOffsetPage[Event]:
+        """List inbound events.
+
+        ``source_id`` takes a source id or its slug; one that matches no source raises
+        :class:`~hookbase.NotFoundError` rather than returning an empty page.
+        """
         params = self._clean_params({
             "limit": limit, "offset": offset, "sourceId": source_id,
             "eventType": event_type, "search": search,
@@ -52,6 +57,11 @@ class Events(SyncResource):
         to_date: str | None = None,
         status: str | None = None,
     ) -> Any:
+        """Export inbound events as JSON or CSV.
+
+        ``source_id`` takes a source id or its slug; one that matches no source raises
+        :class:`~hookbase.NotFoundError`.
+        """
         params = self._clean_params({
             "format": format, "sourceId": source_id,
             "eventType": event_type,
@@ -74,6 +84,11 @@ class AsyncEvents(AsyncResource):
         signature_valid: str | None = None,
         status: str | None = None,
     ) -> AsyncOffsetPage[Event]:
+        """List inbound events.
+
+        ``source_id`` takes a source id or its slug; one that matches no source raises
+        :class:`~hookbase.NotFoundError` rather than returning an empty page.
+        """
         params = self._clean_params({
             "limit": limit, "offset": offset, "sourceId": source_id,
             "eventType": event_type, "search": search,
@@ -100,6 +115,11 @@ class AsyncEvents(AsyncResource):
         to_date: str | None = None,
         status: str | None = None,
     ) -> Any:
+        """Export inbound events as JSON or CSV.
+
+        ``source_id`` takes a source id or its slug; one that matches no source raises
+        :class:`~hookbase.NotFoundError`.
+        """
         params = self._clean_params({
             "format": format, "sourceId": source_id,
             "eventType": event_type,

@@ -26,6 +26,7 @@ from .resources import (
     AsyncMessages,
     AsyncOrganizations,
     AsyncPortalTokens,
+    AsyncProviders,
     AsyncRoutes,
     AsyncSchemas,
     AsyncSources,
@@ -43,6 +44,7 @@ from .resources import (
     Messages,
     Organizations,
     PortalTokens,
+    Providers,
     Routes,
     Schemas,
     Sources,
@@ -118,6 +120,8 @@ class Hookbase:
     transforms: Transforms
     filters: Filters
     schemas: Schemas
+    #: The public provider catalog (what each provider signs with, which secret it needs).
+    providers: Providers
 
     # Outbound
     outbound: _OutboundNamespace
@@ -160,6 +164,7 @@ class Hookbase:
         self.transforms = Transforms(self._transport)
         self.filters = Filters(self._transport)
         self.schemas = Schemas(self._transport)
+        self.providers = Providers(self._transport)
 
         # Outbound namespace
         self.outbound = _OutboundNamespace(self._transport)
@@ -210,6 +215,8 @@ class AsyncHookbase:
     transforms: AsyncTransforms
     filters: AsyncFilters
     schemas: AsyncSchemas
+    #: The public provider catalog (what each provider signs with, which secret it needs).
+    providers: AsyncProviders
 
     # Outbound
     outbound: _AsyncOutboundNamespace
@@ -252,6 +259,7 @@ class AsyncHookbase:
         self.transforms = AsyncTransforms(self._transport)
         self.filters = AsyncFilters(self._transport)
         self.schemas = AsyncSchemas(self._transport)
+        self.providers = AsyncProviders(self._transport)
 
         # Outbound namespace
         self.outbound = _AsyncOutboundNamespace(self._transport)
