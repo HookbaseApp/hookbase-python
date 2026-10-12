@@ -13,6 +13,7 @@ from .message_log import AsyncMessageLog, MessageLog
 from .messages import AsyncMessages, Messages
 from .organizations import AsyncOrganizations, Organizations
 from .portal_tokens import AsyncPortalTokens, PortalTokens
+from .providers import AsyncProviders, Providers
 from .routes import AsyncRoutes, Routes
 from .schemas import AsyncSchemas, Schemas
 from .sources import AsyncSources, Sources
@@ -36,6 +37,7 @@ __all__ = [
     "Messages", "AsyncMessages",
     "Organizations", "AsyncOrganizations",
     "PortalTokens", "AsyncPortalTokens",
+    "Providers", "AsyncProviders",
     "Routes", "AsyncRoutes",
     "Schemas", "AsyncSchemas",
     "Sources", "AsyncSources",

@@ -1,6 +1,16 @@
 from .analytics import AnalyticsTimeline, DashboardData
 from .api_keys import ApiKey, ApiKeyWithSecret, CreateApiKeyParams
 from .applications import Application, CreateApplicationParams, UpdateApplicationParams
+from .catalog import (
+    CatalogProvider,
+    CatalogProviderDetail,
+    ProviderCatalogList,
+    ProviderEvents,
+    ProviderEventType,
+    ProviderSignatureVerification,
+    ProviderSignatureVerificationSummary,
+    ProviderVerifyTokenInfo,
+)
 from .common import BulkDeleteResult, ImportResult, ImportResultItem
 from .cron_jobs import (
     CreateCronGroupParams,
@@ -89,9 +99,13 @@ from .routes import (
 )
 from .schemas import CreateSchemaParams, Schema, SchemaValidationResult, UpdateSchemaParams
 from .sources import (
+    CLEARABLE_SOURCE_FIELDS,
+    KNOWN_SOURCE_PROVIDERS,
+    ClearableSourceField,
     CreateSourceParams,
     DedupStrategy,
     IpFilterMode,
+    PendingVerification,
     Source,
     SourceProvider,
     SourceWithSecret,
@@ -119,6 +133,15 @@ __all__ = [
     "Application",
     "CreateApplicationParams",
     "UpdateApplicationParams",
+    # Catalog
+    "CatalogProvider",
+    "CatalogProviderDetail",
+    "ProviderCatalogList",
+    "ProviderEventType",
+    "ProviderEvents",
+    "ProviderSignatureVerification",
+    "ProviderSignatureVerificationSummary",
+    "ProviderVerifyTokenInfo",
     # Common
     "BulkDeleteResult",
     "ImportResult",
@@ -211,9 +234,13 @@ __all__ = [
     "SchemaValidationResult",
     "UpdateSchemaParams",
     # Sources
+    "CLEARABLE_SOURCE_FIELDS",
+    "KNOWN_SOURCE_PROVIDERS",
+    "ClearableSourceField",
     "CreateSourceParams",
     "DedupStrategy",
     "IpFilterMode",
+    "PendingVerification",
     "Source",
     "SourceProvider",
     "SourceWithSecret",

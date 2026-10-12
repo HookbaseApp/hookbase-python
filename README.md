@@ -63,7 +63,26 @@ client.sources.create({"name": "GitHub", "slug": "github", "provider": "github"}
 client.sources.get("src_id")
 client.sources.update("src_id", {"name": "Updated"})
 client.sources.delete("src_id")
-client.sources.rotate_secret("src_id")
+client.sources.rotate_secret("src_id")  # 400 for vendor-issued/public-key/built-in secrets
+client.sources.reveal_secret("src_id")
+
+# A provider that verifies with no secret: signing_secret comes back None
+wise = client.sources.create({"name": "Wise", "slug": "wise", "provider": "wise"})
+assert wise.verifies_without_secret and wise.signing_secret is None
+
+# WhatsApp (Meta) sources also carry a verify token
+wa = client.sources.create({"name": "WhatsApp", "slug": "whatsapp", "provider": "whatsapp"})
+print(wa.verify_token)
+client.sources.rotate_verify_token(wa.id)
+
+# Notion parks its verification token until you adopt it
+pending = client.sources.get_pending_verification("notion")
+client.sources.adopt_pending_verification("notion")
+
+# Provider catalog: which secret each provider needs (public, no auth needed)
+for p in client.providers.list(category="payments").providers:
+    print(p.hookbase_provider, p.signature_verification and p.signature_verification.secret_source)
+client.providers.get("stripe").signature_verification
 
 # Destinations
 client.destinations.list()
@@ -76,7 +95,7 @@ client.routes.get_circuit_status("route_id")
 client.routes.reset_circuit("route_id")
 
 # Events & Deliveries
-client.events.list(source_id="src_id", from_date="2024-01-01")
+client.events.list(source_id="src_id", from_date="2024-01-01")  # id or slug; unknown -> 404
 client.events.get("evt_id")  # Includes payload and deliveries
 client.deliveries.replay("del_id")
 client.deliveries.bulk_replay(["del_1", "del_2"])
@@ -217,11 +236,14 @@ All responses are typed Pydantic models with camelCase alias support:
 from hookbase.models import Source, CreateSourceParams
 
 # Use Pydantic models for type safety
-params = CreateSourceParams(name="GitHub", provider="github")
+params = CreateSourceParams(name="GitHub", slug="github", provider="github")
 source = client.sources.create(params)
 
 # Or use plain dicts
-source = client.sources.create({"name": "GitHub", "provider": "github"})
+source = client.sources.create({"name": "GitHub", "slug": "github", "provider": "github"})
+
+# `provider` is any string (hookbase.models.KNOWN_SOURCE_PROVIDERS lists today's values), so a
+# source with a provider newer than this package still parses.
 ```
 
 ## Development

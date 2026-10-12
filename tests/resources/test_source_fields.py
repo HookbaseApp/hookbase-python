@@ -16,15 +16,19 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from hookbase.errors import HookbaseError
 from hookbase.models.sources import (
+    CLEARABLE_SOURCE_FIELDS,
+    KNOWN_SOURCE_PROVIDERS,
     CreateSourceParams,
     Source,
     SourceWithSecret,
     UpdateSourceParams,
+    update_source_body,
 )
 
 CREATE_FIELDS = {
-    "name", "slug", "provider", "description", "signingSecret",
+    "name", "slug", "provider", "description", "signingSecret", "verifyToken",
     "rejectInvalidSignatures", "rateLimitPerMinute", "ipFilterMode", "ipAllowlist",
     "ipDenylist", "encryptFields", "maskFields", "dedupEnabled", "dedupStrategy",
     "dedupWindowHours", "dedupCustomHeader", "transientMode", "allowedMethods",
@@ -34,7 +38,9 @@ UPDATE_FIELDS = (CREATE_FIELDS - {"slug"}) | {"isActive"}
 
 
 def _aliases(model: type) -> set[str]:
-    return {f.alias or name for name, f in model.model_fields.items()}
+    # `clear` is the SDK's own control field: update_source_body turns it into nulls and it never
+    # reaches the wire under its own name (see test_clear_* below).
+    return {f.alias or name for name, f in model.model_fields.items()} - {"clear"}
 
 
 def test_create_params_send_exactly_the_accepted_fields() -> None:
@@ -64,6 +70,7 @@ def test_a_full_create_serializes_every_field_under_its_wire_name() -> None:
         provider="stripe",
         description="Live charge events",
         signing_secret="whsec_abc",
+        verify_token="vt_abc",
         reject_invalid_signatures=True,
         rate_limit_per_minute=600,
         ip_filter_mode="allowlist",
@@ -103,3 +110,49 @@ def test_a_created_source_carries_the_secret_and_the_ingest_url() -> None:
     )
     assert created.signing_secret == "whsec_abc"
     assert created.ingest_url is not None and "/ingest/" in created.ingest_url
+
+
+def test_known_providers_are_the_78_the_api_accepts() -> None:
+    assert len(KNOWN_SOURCE_PROVIDERS) == 78
+    assert len(set(KNOWN_SOURCE_PROVIDERS)) == 78
+    # The three once wrongly listed as never-accepted are accepted now.
+    assert {"sendgrid", "mailgun", "linear", "wise", "whatsapp"} <= set(KNOWN_SOURCE_PROVIDERS)
+
+
+def test_provider_is_an_open_string_on_requests_too() -> None:
+    """A provider newer than this package is sent as-is; the API is what validates it."""
+    params = CreateSourceParams(name="New", slug="new", provider="some-future-provider")
+    assert params.model_dump(by_alias=True, exclude_none=True)["provider"] == "some-future-provider"
+    assert UpdateSourceParams(provider="some-future-provider").provider == "some-future-provider"
+
+
+def test_a_source_with_an_unknown_provider_parses() -> None:
+    """The bug this release fixes: a Literal provider made any newer-provider source raise."""
+    src = Source.model_validate({"id": "src_1", "name": "X", "slug": "x", "provider": "wise"})
+    assert src.provider == "wise"
+    src = Source.model_validate({"id": "src_2", "name": "Y", "slug": "y", "provider": "zzz-new"})
+    assert src.provider == "zzz-new"
+
+
+def test_clear_sends_explicit_nulls_for_secret_and_verify_token() -> None:
+    body = update_source_body(UpdateSourceParams(name="N", clear=["signingSecret", "verify_token"]))
+    assert body == {"name": "N", "signingSecret": None, "verifyToken": None}
+
+
+def test_clear_rejects_a_field_the_api_does_not_null() -> None:
+    with pytest.raises(HookbaseError, match="not one of"):
+        update_source_body({"clear": ["name"]})
+
+
+def test_clear_rejects_a_field_that_is_also_set() -> None:
+    with pytest.raises(HookbaseError, match="also set"):
+        update_source_body(UpdateSourceParams(verify_token="x", clear=["verifyToken"]))
+
+
+def test_every_clearable_field_is_an_update_field() -> None:
+    assert set(CLEARABLE_SOURCE_FIELDS) <= UPDATE_FIELDS
+
+
+def test_empty_verify_token_is_sent_to_regenerate() -> None:
+    """'' asks the API for a fresh token; exclude_none must not drop it."""
+    assert update_source_body(UpdateSourceParams(verify_token="")) == {"verifyToken": ""}
