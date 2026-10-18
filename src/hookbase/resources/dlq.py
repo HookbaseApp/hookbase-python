@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from .._pagination import (
     AsyncCursorPage,
     SyncCursorPage,
@@ -16,6 +18,11 @@ from ..models.dlq import (
 from ._base import AsyncResource, SyncResource
 
 
+def _unwrap(resp: Any) -> Any:
+    """The bulk DLQ routes wrap their result in `data`, like every other route."""
+    return resp.get("data", resp) if isinstance(resp, dict) else resp
+
+
 class DLQ(SyncResource):
     def list(
         self,
@@ -26,11 +33,14 @@ class DLQ(SyncResource):
         application_id: str | None = None,
         dlq_reason: str | None = None,
         event_type: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> SyncCursorPage[DlqMessage]:
         params = self._clean_params({
             "limit": limit, "cursor": cursor,
             "endpointId": endpoint_id, "applicationId": application_id,
-            "dlqReason": dlq_reason, "eventType": event_type,
+            "reason": dlq_reason, "eventType": event_type,
+            "startDate": start_date, "endDate": end_date,
         })
         path = "/api/outbound-messages/dlq/messages"
         return _fetch_cursor_page(self._transport, path, params, DlqMessage)
@@ -46,15 +56,19 @@ class DLQ(SyncResource):
         return self._parse(DlqRetryResult, data)
 
     def retry_bulk(self, ids: list[str]) -> DlqBulkRetryResult:
-        resp = self._request("POST", "/api/outbound-messages/dlq/retry-bulk", json={"ids": ids})
-        return self._parse(DlqBulkRetryResult, resp)
+        resp = self._request(
+            "POST", "/api/outbound-messages/dlq/retry-bulk", json={"messageIds": ids},
+        )
+        return self._parse(DlqBulkRetryResult, _unwrap(resp))
 
     def delete(self, id: str) -> None:
         self._request("DELETE", f"/api/outbound-messages/dlq/{id}")
 
     def bulk_delete(self, ids: list[str]) -> DlqBulkDeleteResult:
-        resp = self._request("DELETE", "/api/outbound-messages/dlq/bulk", json={"ids": ids})
-        return self._parse(DlqBulkDeleteResult, resp)
+        resp = self._request(
+            "DELETE", "/api/outbound-messages/dlq/bulk", json={"messageIds": ids},
+        )
+        return self._parse(DlqBulkDeleteResult, _unwrap(resp))
 
 
 class AsyncDLQ(AsyncResource):
@@ -67,11 +81,14 @@ class AsyncDLQ(AsyncResource):
         application_id: str | None = None,
         dlq_reason: str | None = None,
         event_type: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> AsyncCursorPage[DlqMessage]:
         params = self._clean_params({
             "limit": limit, "cursor": cursor,
             "endpointId": endpoint_id, "applicationId": application_id,
-            "dlqReason": dlq_reason, "eventType": event_type,
+            "reason": dlq_reason, "eventType": event_type,
+            "startDate": start_date, "endDate": end_date,
         })
         path = "/api/outbound-messages/dlq/messages"
         return await _async_fetch_cursor_page(self._transport, path, params, DlqMessage)
@@ -88,12 +105,14 @@ class AsyncDLQ(AsyncResource):
 
     async def retry_bulk(self, ids: list[str]) -> DlqBulkRetryResult:
         path = "/api/outbound-messages/dlq/retry-bulk"
-        resp = await self._request("POST", path, json={"ids": ids})
-        return self._parse(DlqBulkRetryResult, resp)
+        resp = await self._request("POST", path, json={"messageIds": ids})
+        return self._parse(DlqBulkRetryResult, _unwrap(resp))
 
     async def delete(self, id: str) -> None:
         await self._request("DELETE", f"/api/outbound-messages/dlq/{id}")
 
     async def bulk_delete(self, ids: list[str]) -> DlqBulkDeleteResult:
-        resp = await self._request("DELETE", "/api/outbound-messages/dlq/bulk", json={"ids": ids})
-        return self._parse(DlqBulkDeleteResult, resp)
+        resp = await self._request(
+            "DELETE", "/api/outbound-messages/dlq/bulk", json={"messageIds": ids},
+        )
+        return self._parse(DlqBulkDeleteResult, _unwrap(resp))

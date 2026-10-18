@@ -161,7 +161,7 @@ class SyncCursorPage(Generic[T]):
         page = self
         while True:
             yield from page.data
-            if not page.has_more:
+            if not page.has_more or not page.next_cursor:
                 break
             page = page.next_page()
 
@@ -211,7 +211,7 @@ class AsyncCursorPage(Generic[T]):
         while True:
             for item in page.data:
                 yield item
-            if not page.has_more:
+            if not page.has_more or not page.next_cursor:
                 break
             page = await page.next_page()
 

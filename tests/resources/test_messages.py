@@ -48,7 +48,7 @@ def test_list_message_log(mock_api, client):
     mock_api.get("/api/outbound-messages").respond(200, json=make_cursor_response([
         {
             "id": "om_1",
-            "messageId": "msg_1",
+            "eventId": "evt_1",
             "endpointId": "ep_1",
             "endpointUrl": "https://a.com",
             "eventType": "order.created",
@@ -56,7 +56,7 @@ def test_list_message_log(mock_api, client):
             "attempts": 1,
             "maxAttempts": 5,
             "createdAt": "2024-01-01T00:00:00Z",
-            "updatedAt": "2024-01-01T00:00:00Z",
+            "completedAt": "2024-01-01T00:00:01Z",
         }
     ]))
     page = client.outbound.message_log.list(application_id="app_1")
@@ -73,12 +73,14 @@ def test_get_stats(mock_api, client):
             "processing": 2,
             "success": 100,
             "failed": 3,
+            "awaitingRetry": 4,
             "exhausted": 1,
             "dlq": 1,
-            "total": 112,
+            "total": 116,
         }
     })
     stats = client.outbound.message_log.stats()
     assert isinstance(stats, StatsSummary)
-    assert stats.total == 112
+    assert stats.total == 116
     assert stats.success == 100
+    assert stats.awaiting_retry == 4

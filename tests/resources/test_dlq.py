@@ -6,7 +6,7 @@ import respx
 from hookbase import Hookbase
 from hookbase.models import DlqMessage, DlqRetryResult, DlqStats
 
-from ..conftest import make_cursor_response
+from ..conftest import make_cursor_response, sent_body
 
 
 @pytest.fixture
@@ -24,16 +24,24 @@ def client(mock_api):
 
 DLQ_MSG = {
     "id": "dlq_1",
-    "messageId": "msg_1",
+    "eventId": "evt_1",
     "endpointId": "ep_1",
     "applicationId": "app_1",
     "eventType": "order.created",
-    "status": "exhausted",
-    "dlqReason": "max_retries_exceeded",
+    "status": "dlq",
     "attempts": 5,
     "maxAttempts": 5,
+    "lastResponseStatus": 500,
+    "lastErrorType": "http_error",
+    "lastErrorMessage": "HTTP 500",
+    "dlqReason": "max_retries_exceeded",
+    "dlqMovedAt": "2024-01-01T01:00:00Z",
+    "dlqRetryCount": 1,
+    "dlqLastRetryAt": "2024-01-01T02:00:00Z",
     "createdAt": "2024-01-01T00:00:00Z",
-    "updatedAt": "2024-01-01T00:00:00Z",
+    "completedAt": None,
+    "endpointUrl": "https://a.com",
+    "applicationName": "Acme",
 }
 
 
@@ -53,9 +61,10 @@ def test_dlq_stats(mock_api, client):
         "data": {
             "total": 10,
             "byReason": {"max_retries_exceeded": 8, "endpoint_disabled": 2},
-            "topFailingEndpoints": [
+            "byEndpoint": [
                 {"endpointId": "ep_1", "endpointUrl": "https://a.com", "count": 5},
             ],
+            "byEventType": [{"eventType": "order.created", "count": 7}],
         }
     })
     stats = client.outbound.dlq.stats()
@@ -83,6 +92,10 @@ def test_dlq_delete(mock_api, client):
 
 
 def test_dlq_bulk_delete(mock_api, client):
-    mock_api.delete("/api/outbound-messages/dlq/bulk").respond(200, json={"total": 2, "deleted": 2})
+    route = mock_api.delete("/api/outbound-messages/dlq/bulk").respond(
+        200, json={"data": {"deleted": 2}},
+    )
     result = client.outbound.dlq.bulk_delete(["dlq_1", "dlq_2"])
+    assert sent_body(route) == {"messageIds": ["dlq_1", "dlq_2"]}
     assert result.deleted == 2
+    assert result.total == 2

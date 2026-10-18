@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 from .._pagination import (
@@ -17,6 +18,24 @@ from ..models.endpoints import (
     endpoint_body,
 )
 from ._base import AsyncResource, SyncResource
+
+
+def _test_body(event_type: str | None, payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    """`testEventSchema` in the API's webhook-endpoints.ts: optional eventType and payload."""
+    body: dict[str, Any] = {}
+    if event_type is not None:
+        body["eventType"] = event_type
+    if payload is not None:
+        body["payload"] = payload
+    return body or None
+
+
+def _warn_verify() -> None:
+    warnings.warn(
+        "endpoints.verify() calls a route the API does not have and always fails with 404.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
 
 
 class Endpoints(SyncResource):
@@ -79,10 +98,27 @@ class Endpoints(SyncResource):
     def reset_circuit(self, id: str) -> None:
         self._request("POST", f"/api/webhook-endpoints/{id}/reset-circuit")
 
-    def test(self, id: str) -> dict[str, Any]:
-        return self._request("POST", f"/api/webhook-endpoints/{id}/test")
+    def test(
+        self,
+        id: str,
+        *,
+        event_type: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Send a signed test event to the endpoint and return the delivery result.
+
+        Without `event_type`/`payload` the API picks one of the endpoint's
+        subscribed event types and its example payload.
+        """
+        return self._request(
+            "POST", f"/api/webhook-endpoints/{id}/test",
+            json=_test_body(event_type, payload),
+        )
 
     def verify(self, id: str) -> dict[str, Any]:
+        """Deprecated: the API has no endpoint-verify route, so this always raises
+        `NotFoundError`."""
+        _warn_verify()
         return self._request("POST", f"/api/webhook-endpoints/{id}/verify")
 
 
@@ -150,8 +186,21 @@ class AsyncEndpoints(AsyncResource):
     async def reset_circuit(self, id: str) -> None:
         await self._request("POST", f"/api/webhook-endpoints/{id}/reset-circuit")
 
-    async def test(self, id: str) -> dict[str, Any]:
-        return await self._request("POST", f"/api/webhook-endpoints/{id}/test")
+    async def test(
+        self,
+        id: str,
+        *,
+        event_type: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Send a signed test event to the endpoint. See `Endpoints.test`."""
+        return await self._request(
+            "POST", f"/api/webhook-endpoints/{id}/test",
+            json=_test_body(event_type, payload),
+        )
 
     async def verify(self, id: str) -> dict[str, Any]:
+        """Deprecated: the API has no endpoint-verify route, so this always raises
+        `NotFoundError`."""
+        _warn_verify()
         return await self._request("POST", f"/api/webhook-endpoints/{id}/verify")

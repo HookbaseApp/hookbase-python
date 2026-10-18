@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import math
+import re
 import secrets
 import time
 from typing import Any
@@ -12,6 +13,8 @@ from typing import Any
 from .errors import WebhookVerificationError
 
 DEFAULT_TOLERANCE = 300  # 5 minutes
+
+_LEGACY_HEX_SECRET = re.compile(r"[0-9a-fA-F]{64}")
 
 
 class Webhook:
@@ -48,7 +51,10 @@ class Webhook:
             WebhookVerificationError: If verification fails.
         """
         if isinstance(payload, bytes):
-            payload = payload.decode("utf-8")
+            try:
+                payload = payload.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise WebhookVerificationError("Payload is not valid UTF-8") from exc
 
         normalized = {k.lower(): v for k, v in headers.items()}
 
@@ -149,9 +155,20 @@ class Webhook:
         return base64.b64encode(mac.digest()).decode("utf-8")
 
     def _decode_secret(self) -> bytes:
+        """Decode the secret to key bytes the way the API's `decodeSecret` does.
+
+        Strip `whsec_` and the `op_` infix operational-webhook secrets carry
+        (`whsec_op_<base64>`). A 64-character hex remainder is a legacy secret
+        and is hex-decoded; it is also valid base64, so it must be checked first.
+        Anything else is base64.
+        """
         secret = self._secret
         if secret.startswith("whsec_"):
             secret = secret[6:]
+            if secret.startswith("op_"):
+                secret = secret[3:]
+        if _LEGACY_HEX_SECRET.fullmatch(secret):
+            return bytes.fromhex(secret)
         return base64.b64decode(secret)
 
 

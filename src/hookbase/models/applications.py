@@ -14,6 +14,19 @@ class Application(HookbaseModel):
     organization_id: str
     external_id: str = ""
     metadata: dict[str, Any] | None = None
+    rate_limit_per_second: int | None = None
+    rate_limit_per_minute: int | None = None
+    rate_limit_per_hour: int | None = None
+    is_disabled: bool = False
+    disabled_at: str | None = None
+    disabled_reason: str | None = None
+    total_endpoints: int | None = None
+    total_messages_sent: int | None = None
+    total_messages_failed: int | None = None
+    last_event_at: str | None = None
+    send_event_url: str | None = None
+    created_by: str | None = None
+    api_key_id: str | None = None
     created_at: str = ""
     updated_at: str = ""
 
@@ -45,6 +58,9 @@ class CreateApplicationParams(HookbaseModel):
     name: str
     external_id: str | None = None
     metadata: dict[str, Any] | None = None
+    rate_limit_per_second: int | None = None
+    rate_limit_per_minute: int | None = None
+    rate_limit_per_hour: int | None = None
 
     uid: str | None = None
     """Deprecated: renamed to `external_id`, which is the only name the API
@@ -55,6 +71,11 @@ class CreateApplicationParams(HookbaseModel):
 class UpdateApplicationParams(HookbaseModel):
     name: str | None = None
     metadata: dict[str, Any] | None = None
+    rate_limit_per_second: int | None = None
+    rate_limit_per_minute: int | None = None
+    rate_limit_per_hour: int | None = None
+    is_disabled: bool | None = None
+    disabled_reason: str | None = None
 
 
 def application_body(params: CreateApplicationParams | dict[str, Any]) -> dict[str, Any]:

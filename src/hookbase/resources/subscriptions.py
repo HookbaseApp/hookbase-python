@@ -16,6 +16,14 @@ from ..models.subscriptions import (
 from ._base import AsyncResource, SyncResource, _to_body
 
 
+def _bulk_items(resp: Any) -> Any:
+    """`POST /bulk` returns `{created, skipped, subscriptions}` with no `data` wrapper, and
+    leaves `subscriptions` out when every event type was already subscribed."""
+    if isinstance(resp, dict):
+        return resp.get("subscriptions", resp.get("data", []))
+    return resp
+
+
 class Subscriptions(SyncResource):
     def list(
         self,
@@ -25,10 +33,12 @@ class Subscriptions(SyncResource):
         is_enabled: bool | None = None,
         limit: int | None = None,
         cursor: str | None = None,
+        application_id: str | None = None,
     ) -> SyncCursorPage[Subscription]:
         params = self._clean_params({
             "endpointId": endpoint_id, "eventTypeId": event_type_id,
             "isEnabled": is_enabled, "limit": limit, "cursor": cursor,
+            "applicationId": application_id,
         })
         return _fetch_cursor_page(
             self._transport, "/api/webhook-subscriptions",
@@ -60,8 +70,7 @@ class Subscriptions(SyncResource):
             "endpointId": endpoint_id,
             "eventTypeIds": event_type_ids,
         })
-        items = resp.get("data", resp) if isinstance(resp, dict) else resp
-        return self._parse_list(Subscription, items)
+        return self._parse_list(Subscription, _bulk_items(resp))
 
 
 class AsyncSubscriptions(AsyncResource):
@@ -73,10 +82,12 @@ class AsyncSubscriptions(AsyncResource):
         is_enabled: bool | None = None,
         limit: int | None = None,
         cursor: str | None = None,
+        application_id: str | None = None,
     ) -> AsyncCursorPage[Subscription]:
         params = self._clean_params({
             "endpointId": endpoint_id, "eventTypeId": event_type_id,
             "isEnabled": is_enabled, "limit": limit, "cursor": cursor,
+            "applicationId": application_id,
         })
         return await _async_fetch_cursor_page(
             self._transport, "/api/webhook-subscriptions",
@@ -110,5 +121,4 @@ class AsyncSubscriptions(AsyncResource):
             "endpointId": endpoint_id,
             "eventTypeIds": event_type_ids,
         })
-        items = resp.get("data", resp) if isinstance(resp, dict) else resp
-        return self._parse_list(Subscription, items)
+        return self._parse_list(Subscription, _bulk_items(resp))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 from .._pagination import (
@@ -10,6 +11,38 @@ from .._pagination import (
 )
 from ..models.messages import OutboundAttempt, OutboundMessage, ReplayResult, StatsSummary
 from ._base import AsyncResource, SyncResource
+
+
+def _list_params(
+    *,
+    application_id: str | None,
+    endpoint_id: str | None,
+    message_id: str | None,
+    status: str | None,
+    event_type: str | None,
+    start_date: str | None,
+    end_date: str | None,
+    limit: int | None,
+    cursor: str | None,
+) -> dict[str, Any]:
+    """Query params for `GET /api/outbound-messages`, which filters on status, eventType,
+    applicationId and endpointId only."""
+    ignored = [
+        name for name, value in (
+            ("message_id", message_id), ("start_date", start_date), ("end_date", end_date),
+        ) if value is not None
+    ]
+    if ignored:
+        warnings.warn(
+            f"message_log.list() ignores {', '.join(ignored)}: the API has no such filter.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+    return SyncResource._clean_params({
+        "applicationId": application_id, "endpointId": endpoint_id,
+        "status": status, "eventType": event_type,
+        "limit": limit, "cursor": cursor,
+    })
 
 
 class MessageLog(SyncResource):
@@ -28,12 +61,16 @@ class MessageLog(SyncResource):
         limit: int | None = None,
         cursor: str | None = None,
     ) -> SyncCursorPage[OutboundMessage]:
-        params = self._clean_params({
-            "applicationId": application_id, "endpointId": endpoint_id,
-            "messageId": message_id, "status": status, "eventType": event_type,
-            "startDate": start_date, "endDate": end_date,
-            "limit": limit, "cursor": cursor,
-        })
+        """List outbound messages, newest first.
+
+        `message_id`, `start_date` and `end_date` are deprecated: the API has no
+        such filters and never applied them, so they are no longer sent.
+        """
+        params = _list_params(
+            application_id=application_id, endpoint_id=endpoint_id, message_id=message_id,
+            status=status, event_type=event_type, start_date=start_date, end_date=end_date,
+            limit=limit, cursor=cursor,
+        )
         return _fetch_cursor_page(
             self._transport, "/api/outbound-messages",
             params, OutboundMessage,
@@ -71,6 +108,11 @@ class MessageLog(SyncResource):
         application_id: str | None = None,
         limit: int | None = None,
     ) -> Any:
+        """Export outbound events (`type="events"`, the API default) or messages.
+
+        `format="json"` returns the parsed export object; `format="csv"` returns
+        the CSV text as a string.
+        """
         params = self._clean_params({
             "format": format, "type": type,
             "startDate": start_date, "endDate": end_date,
@@ -96,12 +138,16 @@ class AsyncMessageLog(AsyncResource):
         limit: int | None = None,
         cursor: str | None = None,
     ) -> AsyncCursorPage[OutboundMessage]:
-        params = self._clean_params({
-            "applicationId": application_id, "endpointId": endpoint_id,
-            "messageId": message_id, "status": status, "eventType": event_type,
-            "startDate": start_date, "endDate": end_date,
-            "limit": limit, "cursor": cursor,
-        })
+        """List outbound messages, newest first.
+
+        `message_id`, `start_date` and `end_date` are deprecated: the API has no
+        such filters and never applied them, so they are no longer sent.
+        """
+        params = _list_params(
+            application_id=application_id, endpoint_id=endpoint_id, message_id=message_id,
+            status=status, event_type=event_type, start_date=start_date, end_date=end_date,
+            limit=limit, cursor=cursor,
+        )
         return await _async_fetch_cursor_page(
             self._transport, "/api/outbound-messages",
             params, OutboundMessage,
@@ -139,6 +185,11 @@ class AsyncMessageLog(AsyncResource):
         application_id: str | None = None,
         limit: int | None = None,
     ) -> Any:
+        """Export outbound events (`type="events"`, the API default) or messages.
+
+        `format="json"` returns the parsed export object; `format="csv"` returns
+        the CSV text as a string.
+        """
         params = self._clean_params({
             "format": format, "type": type,
             "startDate": start_date, "endDate": end_date,
