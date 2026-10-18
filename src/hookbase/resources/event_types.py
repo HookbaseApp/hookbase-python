@@ -12,8 +12,9 @@ from ..models.event_types import (
     CreateEventTypeParams,
     EventType,
     UpdateEventTypeParams,
+    event_type_body,
 )
-from ._base import AsyncResource, SyncResource, _to_body
+from ._base import AsyncResource, SyncResource
 
 
 class EventTypes(SyncResource):
@@ -38,13 +39,13 @@ class EventTypes(SyncResource):
         return self._parse(EventType, data)
 
     def create(self, params: CreateEventTypeParams | dict[str, Any]) -> EventType:
-        body = _to_body(params)
+        body = event_type_body(params)
         resp = self._request("POST", "/api/event-types", json=body)
         data = resp.get("data", resp)
         return self._parse(EventType, data)
 
     def update(self, id: str, params: UpdateEventTypeParams | dict[str, Any]) -> EventType:
-        body = _to_body(params)
+        body = event_type_body(params)
         resp = self._request("PATCH", f"/api/event-types/{id}", json=body)
         data = resp.get("data", resp)
         return self._parse(EventType, data)
@@ -77,13 +78,13 @@ class AsyncEventTypes(AsyncResource):
         return self._parse(EventType, data)
 
     async def create(self, params: CreateEventTypeParams | dict[str, Any]) -> EventType:
-        body = _to_body(params)
+        body = event_type_body(params)
         resp = await self._request("POST", "/api/event-types", json=body)
         data = resp.get("data", resp)
         return self._parse(EventType, data)
 
     async def update(self, id: str, params: UpdateEventTypeParams | dict[str, Any]) -> EventType:
-        body = _to_body(params)
+        body = event_type_body(params)
         resp = await self._request("PATCH", f"/api/event-types/{id}", json=body)
         data = resp.get("data", resp)
         return self._parse(EventType, data)

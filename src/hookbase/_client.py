@@ -76,6 +76,31 @@ def _should_retry(status_code: int) -> bool:
     return status_code in RETRY_STATUS_CODES
 
 
+# A POST creates something or triggers work, so repeating one that may already have reached the
+# server (a 5xx, a read timeout, a dropped connection) can do it twice. Only retry those when the
+# request carries an idempotency key the server can deduplicate on. A 429 was rejected before any
+# work was done, and a connect failure never reached the server, so those stay retryable.
+_NON_IDEMPOTENT_METHODS = frozenset({"POST"})
+
+
+def _may_repeat(method: str, idempotency_key: str | None) -> bool:
+    """Whether a request that may already have been processed is safe to send again."""
+    return method.upper() not in _NON_IDEMPOTENT_METHODS or bool(idempotency_key)
+
+
+def _never_sent(exc: httpx.HTTPError) -> bool:
+    """Whether the transport failed before the request reached the server."""
+    return isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout))
+
+
+def _decode_body(resp: httpx.Response) -> Any:
+    """JSON for JSON responses; the text for anything else (e.g. a CSV export)."""
+    content_type = resp.headers.get("content-type", "")
+    if content_type and "json" not in content_type.lower():
+        return resp.text
+    return resp.json()
+
+
 def _backoff(attempt: int) -> float:
     base = min(1.0 * (2**attempt), 10.0)
     jitter = random.random()  # noqa: S311
@@ -126,6 +151,7 @@ class SyncTransport:
         headers: dict[str, str] = {}
         if idempotency_key:
             headers["Idempotency-Key"] = idempotency_key
+        repeatable = _may_repeat(method, idempotency_key)
 
         if self._debug:
             logger.debug("[Hookbase] %s %s params=%s", method, path, cleaned)
@@ -143,13 +169,13 @@ class SyncTransport:
             except httpx.TimeoutException as exc:
                 last_exc = TimeoutError(f"Request timed out after {self._timeout}s")
                 last_exc.__cause__ = exc
-                if attempt < self._max_retries:
+                if attempt < self._max_retries and (repeatable or _never_sent(exc)):
                     time.sleep(_backoff(attempt))
                     continue
                 raise last_exc from exc
             except httpx.HTTPError as exc:
                 last_exc = NetworkError(str(exc), cause=exc)
-                if attempt < self._max_retries:
+                if attempt < self._max_retries and (repeatable or _never_sent(exc)):
                     time.sleep(_backoff(attempt))
                     continue
                 raise last_exc from exc
@@ -160,7 +186,7 @@ class SyncTransport:
                 return None
 
             if resp.is_success:
-                return resp.json()
+                return _decode_body(resp)
 
             # Parse error body
             try:
@@ -179,8 +205,11 @@ class SyncTransport:
                     except ValueError:
                         pass
 
-            # Don't retry client errors (except 429 and 409)
+            # Don't retry client errors (except 429), nor a 5xx on a request
+            # that is not safe to repeat (see `_may_repeat`).
             if not _should_retry(resp.status_code):
+                raise error
+            if not repeatable and not isinstance(error, RateLimitError):
                 raise error
 
             last_exc = error
@@ -242,6 +271,7 @@ class AsyncTransport:
         headers: dict[str, str] = {}
         if idempotency_key:
             headers["Idempotency-Key"] = idempotency_key
+        repeatable = _may_repeat(method, idempotency_key)
 
         if self._debug:
             logger.debug("[Hookbase] %s %s params=%s", method, path, cleaned)
@@ -259,13 +289,13 @@ class AsyncTransport:
             except httpx.TimeoutException as exc:
                 last_exc = TimeoutError(f"Request timed out after {self._timeout}s")
                 last_exc.__cause__ = exc
-                if attempt < self._max_retries:
+                if attempt < self._max_retries and (repeatable or _never_sent(exc)):
                     await asyncio.sleep(_backoff(attempt))
                     continue
                 raise last_exc from exc
             except httpx.HTTPError as exc:
                 last_exc = NetworkError(str(exc), cause=exc)
-                if attempt < self._max_retries:
+                if attempt < self._max_retries and (repeatable or _never_sent(exc)):
                     await asyncio.sleep(_backoff(attempt))
                     continue
                 raise last_exc from exc
@@ -276,7 +306,7 @@ class AsyncTransport:
                 return None
 
             if resp.is_success:
-                return resp.json()
+                return _decode_body(resp)
 
             try:
                 body = resp.json()
@@ -294,6 +324,8 @@ class AsyncTransport:
                         pass
 
             if not _should_retry(resp.status_code):
+                raise error
+            if not repeatable and not isinstance(error, RateLimitError):
                 raise error
 
             last_exc = error

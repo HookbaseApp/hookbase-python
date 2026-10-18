@@ -271,5 +271,22 @@ class EndpointStats(HookbaseModel):
 
 
 class RotateSecretResult(HookbaseModel):
+    """The result of `POST /api/webhook-endpoints/:id/rotate-secret`."""
+
     secret: str
+    """The new signing secret. Save it now; no later response repeats it."""
+    previous_secret_expires_at: str | None = None
+    """Until when deliveries are also signed with the previous secret."""
+    secret_version: int | None = None
+
     previous_secret_valid_until: str | None = None
+    """Deprecated: read `previous_secret_expires_at`; this mirrors it."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _mirror_expiry(cls, data: Any) -> Any:
+        if isinstance(data, dict) and data.get("previousSecretValidUntil") is None:
+            expires = data.get("previousSecretExpiresAt")
+            if expires is not None:
+                return {**data, "previousSecretValidUntil": expires}
+        return data

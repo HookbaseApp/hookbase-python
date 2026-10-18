@@ -149,3 +149,63 @@ def test_custom_tolerance(wh):
     # Should fail with 30s tolerance
     with pytest.raises(WebhookVerificationError, match="outside tolerance"):
         wh.verify(payload, headers, tolerance=30)
+
+
+# --- secret decoding and multi-signature headers, as api/src/utils/outbound-signature.ts signs ---
+
+import hashlib  # noqa: E402
+import hmac  # noqa: E402
+
+KEY_BYTES = bytes(range(32))
+
+
+def _api_sign(key: bytes, msg_id: str, ts: int, body: str) -> str:
+    mac = hmac.new(key, f"{msg_id}.{ts}.{body}".encode(), hashlib.sha256).digest()
+    return base64.b64encode(mac).decode()
+
+
+def _headers(sig_header: str, ts: int) -> dict[str, str]:
+    return {"webhook-id": "msg_1", "webhook-timestamp": str(ts), "webhook-signature": sig_header}
+
+
+@pytest.mark.parametrize("secret", [
+    "whsec_" + base64.b64encode(KEY_BYTES).decode(),
+    "whsec_op_" + base64.b64encode(KEY_BYTES).decode(),
+    "whsec_" + KEY_BYTES.hex(),
+    "whsec_" + KEY_BYTES.hex().upper(),
+    KEY_BYTES.hex(),
+])
+def test_verify_decodes_every_secret_form_the_api_signs_with(secret):
+    body = json.dumps({"ok": True})
+    ts = math.floor(time.time())
+    sig = _api_sign(KEY_BYTES, "msg_1", ts, body)
+    assert Webhook(secret).verify(body, _headers(f"v1,{sig}", ts)) == {"ok": True}
+
+
+def test_legacy_hex_secret_is_not_base64_decoded():
+    """A 64-char hex string is also valid base64; decoding it that way gives the wrong key."""
+    body = "{}"
+    ts = math.floor(time.time())
+    wrong_key = base64.b64decode(KEY_BYTES.hex())
+    sig = _api_sign(wrong_key, "msg_1", ts, body)
+    with pytest.raises(WebhookVerificationError):
+        Webhook("whsec_" + KEY_BYTES.hex()).verify(body, _headers(f"v1,{sig}", ts))
+
+
+def test_verify_accepts_any_of_several_space_separated_signatures():
+    secret = "whsec_" + base64.b64encode(KEY_BYTES).decode()
+    other = b"\x01" * 32
+    body = json.dumps({"rotated": True})
+    ts = math.floor(time.time())
+    good = _api_sign(KEY_BYTES, "msg_1", ts, body)
+    stale = _api_sign(other, "msg_1", ts, body)
+    for header in (f"v1,{stale} v1,{good}", f"v1,{good} v1,{stale}"):
+        assert Webhook(secret).verify(body, _headers(header, ts)) == {"rotated": True}
+    with pytest.raises(WebhookVerificationError):
+        Webhook(secret).verify(body, _headers(f"v1,{stale} v1,{stale}", ts))
+
+
+def test_verify_rejects_non_utf8_bytes_with_a_verification_error(wh):
+    headers = wh.generate_test_headers("x")
+    with pytest.raises(WebhookVerificationError):
+        wh.verify(b"\xff\xfe", headers)
