@@ -200,6 +200,18 @@ def test_delivery_deprecated_names_mirror_real_fields():
     assert d.completed_at == "2026-10-20T10:06:00.000Z"
 
 
+def test_delivery_with_null_counts_validates(mock_api, client):
+    # A pending delivery the worker has not counted yet arrives with attemptCount null.
+    pending = {**DELIVERY, "attemptCount": None, "maxAttempts": None}
+    mock_api.get("/api/deliveries").respond(
+        200, json={"deliveries": [pending], "limit": 20, "offset": 0}
+    )
+    d = client.deliveries.list().data[0]
+    assert d.attempt_count == 0
+    assert d.max_attempts == 5
+    assert d.attempts == 0
+
+
 def test_deliveries_get(mock_api, client):
     row = {k: v for k, v in DELIVERY.items() if k != "eventType"}
     mock_api.get("/api/deliveries/del_1").respond(200, json={

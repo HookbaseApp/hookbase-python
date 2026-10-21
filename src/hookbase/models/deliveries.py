@@ -53,6 +53,15 @@ class Delivery(HookbaseModel):
     completed_at: str | None = None
     """Deprecated: read `delivered_at`."""
 
+    @field_validator("attempt_count", "max_attempts", mode="before")
+    @classmethod
+    def _null_counts_to_default(cls, v: Any, info: Any) -> Any:
+        # The API sends null for a delivery the worker has not counted yet; a field default only
+        # covers a missing key, so without this every list/get containing one failed to validate.
+        if v is None:
+            return cls.model_fields[info.field_name].default
+        return v
+
     @field_validator("response_headers", mode="before")
     @classmethod
     def _parse_response_headers(cls, v: Any) -> Any:
