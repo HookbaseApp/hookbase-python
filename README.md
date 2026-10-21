@@ -102,7 +102,7 @@ client.deliveries.bulk_replay(["del_1", "del_2"])
 
 # Transforms & Filters
 client.transforms.create({"name": "Extract", "transformType": "jsonata", "code": "$.data"})
-client.transforms.test("txf_id", payload={"data": {"key": "value"}})
+client.transforms.test(code="$.data", payload={"data": {"key": "value"}})  # .result
 client.filters.test([{"field": "$.type", "operator": "eq", "value": "order"}], payload={...})
 
 # Schemas
@@ -178,10 +178,16 @@ for source in page.auto_paging_iter():
 while page.has_more:
     page = page.next_page()
 
-# Cursor-based (applications, endpoints, subscriptions, etc.)
+# Cursor-based (inbound events, applications, endpoints, subscriptions, etc.)
 page = client.outbound.applications.list(limit=50)
 for app in page.auto_paging_iter():
     print(app.name)
+for event in client.events.list(limit=100).auto_paging_iter():
+    print(event.id)
+
+# Limit/offset with no total (deliveries): pages until one comes back short
+for delivery in client.deliveries.list(status="failed", limit=100).auto_paging_iter():
+    print(delivery.id, delivery.response_status)
 ```
 
 ### Webhook Verification

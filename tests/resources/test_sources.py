@@ -7,7 +7,7 @@ from hookbase import Hookbase
 from hookbase.models import Source, SourceWithSecret
 from hookbase.models.sources import CreateSourceParams, UpdateSourceParams
 
-from ..conftest import make_paginated_response
+from ..conftest import make_paginated_response, sent_body
 
 
 @pytest.fixture
@@ -109,11 +109,49 @@ def test_export_sources(mock_api, client):
 
 
 def test_import_sources(mock_api, client):
-    mock_api.post("/api/sources/import").respond(200, json={
-        "success": True, "imported": 1, "skipped": 0, "errors": 0, "results": [],
+    # Shape of the real-import response in api/src/routes/sources.ts.
+    route = mock_api.post("/api/sources/import").respond(200, json={
+        "success": True,
+        "summary": {"imported": 1, "skipped": 1, "overwritten": 0, "failed": 1},
+        "details": {
+            "imported": ["Test Source"],
+            "skipped": ["Old"],
+            "overwritten": [],
+            "failed": [{"name": "Bad", "error": "Source slug is required"}],
+        },
     })
     result = client.sources.import_sources([SOURCE_DATA])
-    assert result.imported == 1
+    assert sent_body(route) == {
+        "sources": [SOURCE_DATA], "conflictStrategy": "skip", "validateOnly": False,
+    }
+    assert result.success is True
+    assert result.summary is not None and result.summary.imported == 1
+    assert result.summary.failed == 1
+    assert result.details is not None
+    assert result.details.imported == ["Test Source"]
+    assert result.details.failed[0].name == "Bad"
+    assert result.details.failed[0].error == "Source slug is required"
+
+
+def test_import_sources_validate_only(mock_api, client):
+    mock_api.post("/api/sources/import").respond(200, json={
+        "valid": False,
+        "validationResults": [{
+            "index": 0, "name": "Test Source", "slug": "test-source", "status": "rename",
+            "errors": [], "warnings": ["will be renamed"], "resolvedSlug": "test-source-1",
+        }, {
+            "index": 1, "name": "", "slug": "", "status": "error",
+            "errors": ["Source name is required"], "warnings": [],
+        }],
+        "summary": {"total": 2, "toCreate": 1, "toOverwrite": 0, "toSkip": 0, "errors": 1},
+    })
+    result = client.sources.import_sources([SOURCE_DATA, {}], validate_only=True)
+    assert result.valid is False
+    assert result.success is False
+    assert result.summary is not None
+    assert result.summary.to_create == 1 and result.summary.errors == 1
+    assert result.validation_results[0].resolved_slug == "test-source-1"
+    assert result.validation_results[1].errors == ["Source name is required"]
 
 
 # --- transient_mode tests ---

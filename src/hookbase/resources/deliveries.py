@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from .._pagination import (
-    AsyncOffsetPage,
-    SyncOffsetPage,
-    _async_fetch_offset_page,
-    _fetch_offset_page,
+    AsyncLimitOffsetPage,
+    SyncLimitOffsetPage,
+    _async_fetch_limit_offset_page,
+    _fetch_limit_offset_page,
 )
 from ..models.deliveries import BulkReplayResult, Delivery, DeliveryDetail, ReplayResult
 from ._base import AsyncResource, SyncResource
@@ -20,12 +20,19 @@ class Deliveries(SyncResource):
         route_id: str | None = None,
         destination_id: str | None = None,
         status: str | None = None,
-    ) -> SyncOffsetPage[Delivery]:
+    ) -> SyncLimitOffsetPage[Delivery]:
+        """List inbound deliveries, newest first.
+
+        ``limit`` defaults to 50 and is capped at 100 by the API. The response has
+        no total; ``auto_paging_iter()`` keeps fetching until a page comes back short.
+        """
         params = self._clean_params({
             "limit": limit, "offset": offset, "eventId": event_id,
             "routeId": route_id, "destinationId": destination_id, "status": status,
         })
-        return _fetch_offset_page(self._transport, "/api/deliveries", params, Delivery)
+        return _fetch_limit_offset_page(
+            self._transport, "/api/deliveries", params, Delivery, data_key="deliveries",
+        )
 
     def get(self, id: str) -> DeliveryDetail:
         resp = self._request("GET", f"/api/deliveries/{id}")
@@ -36,11 +43,13 @@ class Deliveries(SyncResource):
         return self._parse(ReplayResult, resp)
 
     def bulk_replay(self, ids: list[str]) -> BulkReplayResult:
-        resp = self._request("POST", "/api/deliveries/bulk-replay", json={"ids": ids})
+        resp = self._request("POST", "/api/deliveries/bulk-replay", json={"deliveryIds": ids})
         return self._parse(BulkReplayResult, resp)
 
     def bulk_replay_events(self, event_ids: list[str]) -> BulkReplayResult:
-        resp = self._request("POST", "/api/deliveries/bulk-replay", json={"eventIds": event_ids})
+        resp = self._request(
+            "POST", "/api/deliveries/bulk-replay-events", json={"eventIds": event_ids},
+        )
         return self._parse(BulkReplayResult, resp)
 
 
@@ -54,12 +63,19 @@ class AsyncDeliveries(AsyncResource):
         route_id: str | None = None,
         destination_id: str | None = None,
         status: str | None = None,
-    ) -> AsyncOffsetPage[Delivery]:
+    ) -> AsyncLimitOffsetPage[Delivery]:
+        """List inbound deliveries, newest first.
+
+        ``limit`` defaults to 50 and is capped at 100 by the API. The response has
+        no total; ``auto_paging_iter()`` keeps fetching until a page comes back short.
+        """
         params = self._clean_params({
             "limit": limit, "offset": offset, "eventId": event_id,
             "routeId": route_id, "destinationId": destination_id, "status": status,
         })
-        return await _async_fetch_offset_page(self._transport, "/api/deliveries", params, Delivery)
+        return await _async_fetch_limit_offset_page(
+            self._transport, "/api/deliveries", params, Delivery, data_key="deliveries",
+        )
 
     async def get(self, id: str) -> DeliveryDetail:
         resp = await self._request("GET", f"/api/deliveries/{id}")
@@ -70,12 +86,12 @@ class AsyncDeliveries(AsyncResource):
         return self._parse(ReplayResult, resp)
 
     async def bulk_replay(self, ids: list[str]) -> BulkReplayResult:
-        resp = await self._request("POST", "/api/deliveries/bulk-replay", json={"ids": ids})
+        resp = await self._request("POST", "/api/deliveries/bulk-replay", json={"deliveryIds": ids})
         return self._parse(BulkReplayResult, resp)
 
     async def bulk_replay_events(self, event_ids: list[str]) -> BulkReplayResult:
         resp = await self._request(
-            "POST", "/api/deliveries/bulk-replay",
+            "POST", "/api/deliveries/bulk-replay-events",
             json={"eventIds": event_ids},
         )
         return self._parse(BulkReplayResult, resp)

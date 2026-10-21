@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import field_validator
 
 from ._base import HookbaseModel
+from .deliveries import Delivery
 
 InboundEventStatus = str  # API may return: delivered, failed, pending, partial, schema_failed, etc.
 
@@ -29,31 +30,37 @@ class Event(HookbaseModel):
     source_name: str = ""
     source_slug: str = ""
     status: InboundEventStatus = "pending"
+    method: str | None = None
     delivery_stats: DeliveryStats | None = None
 
 
-class EventDelivery(HookbaseModel):
-    id: str
-    destination_id: str
-    destination_name: str = ""
-    destination_url: str = ""
-    status: str = ""
-    status_code: int | None = None
-    attempts: int = 0
-    created_at: str = ""
-    completed_at: str | None = None
+class EventDelivery(Delivery):
+    """A delivery of this event, as listed on `events.get`.
+
+    The same shape as :class:`~hookbase.models.Delivery`, with `destination_name`
+    and `destination_url` set.
+    """
 
 
 class EventDetail(HookbaseModel):
     id: str
+    organization_id: str | None = None
     source_id: str
     event_type: str | None = None
     payload: Any = None
+    """The stored payload; None for transient events or when it has expired."""
+    payload_hash: str | None = None
+    payload_key: str | None = None
     headers: dict[str, str] = {}
     signature_valid: int | None = None
     received_at: str = ""
     ip_address: str | None = None
     source_name: str = ""
+    status: InboundEventStatus | None = None
+    method: str | None = None
+    encrypt_fields: Any = None
+    mask_fields: Any = None
+    transient: bool = False
     deliveries: list[EventDelivery] = []
 
     @field_validator("headers", mode="before")
@@ -65,6 +72,22 @@ class EventDetail(HookbaseModel):
             except (json.JSONDecodeError, ValueError):
                 return {}
         return v if v is not None else {}
+
+
+def event_detail_data(resp: Any) -> Any:
+    """Flatten a `GET /api/events/:id` response into one :class:`EventDetail`.
+
+    The API returns the event's fields under `event`, with `payload`,
+    `transient` and `deliveries` beside it at the top level, so parsing `event`
+    alone loses the payload and the deliveries.
+    """
+    if not isinstance(resp, dict) or not isinstance(resp.get("event"), dict):
+        return resp
+    data = dict(resp["event"])
+    for key in ("payload", "transient", "deliveries"):
+        if key in resp:
+            data[key] = resp[key]
+    return data
 
 
 class EventDebugEvent(HookbaseModel):

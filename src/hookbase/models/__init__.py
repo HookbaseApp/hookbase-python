@@ -11,7 +11,15 @@ from .catalog import (
     ProviderSignatureVerificationSummary,
     ProviderVerifyTokenInfo,
 )
-from .common import BulkDeleteResult, ImportResult, ImportResultItem
+from .common import (
+    BulkDeleteResult,
+    ImportDetails,
+    ImportFailure,
+    ImportResult,
+    ImportResultItem,
+    ImportSummary,
+    ImportValidationResult,
+)
 from .cron_jobs import (
     CreateCronGroupParams,
     CreateCronJobParams,
@@ -146,6 +154,10 @@ __all__ = [
     "BulkDeleteResult",
     "ImportResult",
     "ImportResultItem",
+    "ImportSummary",
+    "ImportDetails",
+    "ImportFailure",
+    "ImportValidationResult",
     # Cron Jobs
     "CreateCronGroupParams",
     "CreateCronJobParams",
