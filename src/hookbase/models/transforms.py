@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from pydantic import model_validator
+
 from ._base import HookbaseModel
 
 TransformType = Literal["jsonata", "javascript", "mapping", "liquid", "xslt"]
@@ -43,7 +45,24 @@ class UpdateTransformParams(HookbaseModel):
 
 
 class TransformTestResult(HookbaseModel):
+    """The result of `transforms.test`. A transform that fails to run comes back
+    with `success` false and `error` set, not as an exception."""
+
     success: bool
-    output: Any = None
+    result: Any = None
+    """The transform's output: parsed JSON for JSON output, otherwise a string."""
+    content_type: str | None = None
     error: str | None = None
+
+    output: Any = None
+    """Deprecated: the API calls this `result`; read `result` instead. Kept in
+    step with it so existing attribute access keeps working."""
     execution_time_ms: float | None = None
+    """Deprecated: the API does not report execution time; always None."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _mirror_result(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "result" in data:
+            return {**data, "output": data["result"]}
+        return data

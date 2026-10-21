@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import field_validator, model_validator
 
 from . import _wire
 from ._base import HookbaseModel
@@ -317,10 +317,28 @@ def update_destination_body(
 
 class TestResult(HookbaseModel):
     success: bool
-    # The API answers with `status`/`latencyMs` (api/src/routes/destinations.ts), not the
-    # `statusCode`/`duration` that HookbaseModel's to_camel alias_generator would otherwise
-    # expect for these field names — override the alias explicitly rather than rely on it.
-    status_code: int | None = Field(default=None, alias="status")
-    duration: float | None = Field(default=None, alias="latencyMs")
+    status: int | None = None
+    """The HTTP status the destination answered with."""
+    latency_ms: int | None = None
     response_body: str | None = None
     error: str | None = None
+
+    status_code: int | None = None
+    """Deprecated: the API calls this `status`; read `status` instead. Kept in
+    step with it so existing attribute access keeps working."""
+    duration: float | None = None
+    """Deprecated: the API calls this `latencyMs`; read `latency_ms` instead.
+    Kept in step with it so existing attribute access keeps working."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _mirror_deprecated(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        out = dict(data)
+        if out.get("status") is not None:
+            out["statusCode"] = out["status"]
+        latency = out.get("latencyMs", out.get("latency_ms"))
+        if latency is not None:
+            out["duration"] = latency
+        return out

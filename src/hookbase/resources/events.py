@@ -3,12 +3,12 @@ from __future__ import annotations
 from typing import Any
 
 from .._pagination import (
-    AsyncOffsetPage,
-    SyncOffsetPage,
-    _async_fetch_offset_page,
-    _fetch_offset_page,
+    AsyncCursorPage,
+    SyncCursorPage,
+    _async_fetch_cursor_page,
+    _fetch_cursor_page,
 )
-from ..models.events import Event, EventDebugInfo, EventDetail
+from ..models.events import Event, EventDebugInfo, EventDetail, event_detail_data
 from ._base import AsyncResource, SyncResource
 
 
@@ -17,7 +17,7 @@ class Events(SyncResource):
         self,
         *,
         limit: int | None = None,
-        offset: int | None = None,
+        cursor: str | None = None,
         source_id: str | None = None,
         event_type: str | None = None,
         search: str | None = None,
@@ -25,23 +25,27 @@ class Events(SyncResource):
         to_date: str | None = None,
         signature_valid: str | None = None,
         status: str | None = None,
-    ) -> SyncOffsetPage[Event]:
-        """List inbound events.
+    ) -> SyncCursorPage[Event]:
+        """List inbound events, newest first.
 
+        Cursor-paginated: pass ``next_cursor`` from the previous page as ``cursor``,
+        or iterate ``auto_paging_iter()``. ``limit`` is capped at 100 by the API.
         ``source_id`` takes a source id or its slug; one that matches no source raises
         :class:`~hookbase.NotFoundError` rather than returning an empty page.
         """
         params = self._clean_params({
-            "limit": limit, "offset": offset, "sourceId": source_id,
+            "limit": limit, "cursor": cursor, "sourceId": source_id,
             "eventType": event_type, "search": search,
             "fromDate": from_date, "toDate": to_date,
             "signatureValid": signature_valid, "status": status,
         })
-        return _fetch_offset_page(self._transport, "/api/events", params, Event)
+        return _fetch_cursor_page(
+            self._transport, "/api/events", params, Event, data_key="events",
+        )
 
     def get(self, id: str) -> EventDetail:
         resp = self._request("GET", f"/api/events/{id}")
-        return self._parse(EventDetail, resp.get("event", resp))
+        return self._parse(EventDetail, event_detail_data(resp))
 
     def debug(self, id: str) -> EventDebugInfo:
         resp = self._request("GET", f"/api/events/{id}/debug")
@@ -75,7 +79,7 @@ class AsyncEvents(AsyncResource):
         self,
         *,
         limit: int | None = None,
-        offset: int | None = None,
+        cursor: str | None = None,
         source_id: str | None = None,
         event_type: str | None = None,
         search: str | None = None,
@@ -83,23 +87,27 @@ class AsyncEvents(AsyncResource):
         to_date: str | None = None,
         signature_valid: str | None = None,
         status: str | None = None,
-    ) -> AsyncOffsetPage[Event]:
-        """List inbound events.
+    ) -> AsyncCursorPage[Event]:
+        """List inbound events, newest first.
 
+        Cursor-paginated: pass ``next_cursor`` from the previous page as ``cursor``,
+        or iterate ``auto_paging_iter()``. ``limit`` is capped at 100 by the API.
         ``source_id`` takes a source id or its slug; one that matches no source raises
         :class:`~hookbase.NotFoundError` rather than returning an empty page.
         """
         params = self._clean_params({
-            "limit": limit, "offset": offset, "sourceId": source_id,
+            "limit": limit, "cursor": cursor, "sourceId": source_id,
             "eventType": event_type, "search": search,
             "fromDate": from_date, "toDate": to_date,
             "signatureValid": signature_valid, "status": status,
         })
-        return await _async_fetch_offset_page(self._transport, "/api/events", params, Event)
+        return await _async_fetch_cursor_page(
+            self._transport, "/api/events", params, Event, data_key="events",
+        )
 
     async def get(self, id: str) -> EventDetail:
         resp = await self._request("GET", f"/api/events/{id}")
-        return self._parse(EventDetail, resp.get("event", resp))
+        return self._parse(EventDetail, event_detail_data(resp))
 
     async def debug(self, id: str) -> EventDebugInfo:
         resp = await self._request("GET", f"/api/events/{id}/debug")
