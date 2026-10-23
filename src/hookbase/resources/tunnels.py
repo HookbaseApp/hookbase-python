@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from typing import Any
 
 from ..models.common import BulkDeleteResult
@@ -24,7 +25,7 @@ def _update_body(params: UpdateTunnelParams | dict[str, Any]) -> dict[str, Any]:
 
 
 class Tunnels(SyncResource):
-    def list(self) -> list[Tunnel]:
+    def list(self) -> builtins.list[Tunnel]:
         resp = self._request("GET", "/api/tunnels")
         items = resp.get("tunnels", resp.get("data", []))
         return self._parse_list(Tunnel, items if isinstance(items, list) else [])
@@ -60,13 +61,13 @@ class Tunnels(SyncResource):
         """Close the tunnel's active connection, if any."""
         self._request("POST", f"/api/tunnels/{id}/disconnect")
 
-    def bulk_delete(self, ids: list[str]) -> BulkDeleteResult:
+    def bulk_delete(self, ids: builtins.list[str]) -> BulkDeleteResult:
         resp = self._request("DELETE", "/api/tunnels/bulk", json={"ids": ids})
         return self._parse(BulkDeleteResult, resp)
 
 
 class AsyncTunnels(AsyncResource):
-    async def list(self) -> list[Tunnel]:
+    async def list(self) -> builtins.list[Tunnel]:
         resp = await self._request("GET", "/api/tunnels")
         items = resp.get("tunnels", resp.get("data", []))
         return self._parse_list(Tunnel, items if isinstance(items, list) else [])
@@ -97,6 +98,6 @@ class AsyncTunnels(AsyncResource):
     async def disconnect(self, id: str) -> None:
         await self._request("POST", f"/api/tunnels/{id}/disconnect")
 
-    async def bulk_delete(self, ids: list[str]) -> BulkDeleteResult:
+    async def bulk_delete(self, ids: builtins.list[str]) -> BulkDeleteResult:
         resp = await self._request("DELETE", "/api/tunnels/bulk", json={"ids": ids})
         return self._parse(BulkDeleteResult, resp)

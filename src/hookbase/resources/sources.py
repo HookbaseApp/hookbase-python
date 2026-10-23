@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from typing import Any
 
 from .._pagination import (
@@ -102,13 +103,13 @@ class Sources(SyncResource):
         """
         self._request("POST", f"/api/sources/{id}/pending-verification/adopt")
 
-    def export(self, *, ids: list[str] | None = None) -> dict[str, Any]:
+    def export(self, *, ids: builtins.list[str] | None = None) -> dict[str, Any]:
         params = {"ids": ",".join(ids)} if ids else None
         return self._request("GET", "/api/sources/export", params=params)
 
     def import_sources(
         self,
-        sources: list[dict[str, Any]],
+        sources: builtins.list[dict[str, Any]],
         *,
         conflict_strategy: str = "skip",
         validate_only: bool = False,
@@ -120,7 +121,7 @@ class Sources(SyncResource):
         })
         return self._parse(ImportResult, resp)
 
-    def bulk_delete(self, ids: list[str]) -> BulkDeleteResult:
+    def bulk_delete(self, ids: builtins.list[str]) -> BulkDeleteResult:
         resp = self._request("DELETE", "/api/sources/bulk", json={"ids": ids})
         return self._parse(BulkDeleteResult, resp)
 
@@ -207,13 +208,13 @@ class AsyncSources(AsyncResource):
         """
         await self._request("POST", f"/api/sources/{id}/pending-verification/adopt")
 
-    async def export(self, *, ids: list[str] | None = None) -> dict[str, Any]:
+    async def export(self, *, ids: builtins.list[str] | None = None) -> dict[str, Any]:
         params = {"ids": ",".join(ids)} if ids else None
         return await self._request("GET", "/api/sources/export", params=params)
 
     async def import_sources(
         self,
-        sources: list[dict[str, Any]],
+        sources: builtins.list[dict[str, Any]],
         *,
         conflict_strategy: str = "skip",
         validate_only: bool = False,
@@ -225,6 +226,6 @@ class AsyncSources(AsyncResource):
         })
         return self._parse(ImportResult, resp)
 
-    async def bulk_delete(self, ids: list[str]) -> BulkDeleteResult:
+    async def bulk_delete(self, ids: builtins.list[str]) -> BulkDeleteResult:
         resp = await self._request("DELETE", "/api/sources/bulk", json={"ids": ids})
         return self._parse(BulkDeleteResult, resp)

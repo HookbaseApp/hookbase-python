@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import warnings
 from typing import Any
 
@@ -81,7 +82,7 @@ class MessageLog(SyncResource):
         data = resp.get("data", resp)
         return self._parse(OutboundMessage, data)
 
-    def list_attempts(self, id: str) -> list[OutboundAttempt]:
+    def list_attempts(self, id: str) -> builtins.list[OutboundAttempt]:
         resp = self._request("GET", f"/api/outbound-messages/{id}/attempts")
         data = resp.get("data", resp)
         return self._parse_list(OutboundAttempt, data if isinstance(data, list) else [])
@@ -158,7 +159,7 @@ class AsyncMessageLog(AsyncResource):
         data = resp.get("data", resp)
         return self._parse(OutboundMessage, data)
 
-    async def list_attempts(self, id: str) -> list[OutboundAttempt]:
+    async def list_attempts(self, id: str) -> builtins.list[OutboundAttempt]:
         resp = await self._request("GET", f"/api/outbound-messages/{id}/attempts")
         data = resp.get("data", resp)
         return self._parse_list(OutboundAttempt, data if isinstance(data, list) else [])

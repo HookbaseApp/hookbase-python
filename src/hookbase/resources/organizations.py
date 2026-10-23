@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from typing import Any
 
 from ..models.organizations import Invite, Organization, OrganizationMember
@@ -7,7 +8,7 @@ from ._base import AsyncResource, SyncResource
 
 
 class Organizations(SyncResource):
-    def list(self) -> list[Organization]:
+    def list(self) -> builtins.list[Organization]:
         resp = self._request("GET", "/api/organizations")
         items = resp.get("organizations", resp.get("data", [])) if isinstance(resp, dict) else resp
         return self._parse_list(Organization, items if isinstance(items, list) else [])
@@ -30,7 +31,7 @@ class Organizations(SyncResource):
         self._request("PATCH", f"/api/organizations/{id}", json=params)
         return self.get(id)
 
-    def list_members(self, org_id: str) -> list[OrganizationMember]:
+    def list_members(self, org_id: str) -> builtins.list[OrganizationMember]:
         resp = self._request("GET", f"/api/organizations/{org_id}/members")
         items = resp.get("members", resp.get("data", []))
         return self._parse_list(OrganizationMember, items if isinstance(items, list) else [])
@@ -52,7 +53,7 @@ class Organizations(SyncResource):
         data = resp.get("data", resp.get("invite", resp))
         return self._parse(Invite, data)
 
-    def list_invites(self, org_id: str) -> list[Invite]:
+    def list_invites(self, org_id: str) -> builtins.list[Invite]:
         resp = self._request("GET", f"/api/organizations/{org_id}/invites")
         items = resp.get("invites", resp.get("data", []))
         return self._parse_list(Invite, items if isinstance(items, list) else [])
@@ -62,7 +63,7 @@ class Organizations(SyncResource):
 
 
 class AsyncOrganizations(AsyncResource):
-    async def list(self) -> list[Organization]:
+    async def list(self) -> builtins.list[Organization]:
         resp = await self._request("GET", "/api/organizations")
         items = resp.get("organizations", resp.get("data", [])) if isinstance(resp, dict) else resp
         return self._parse_list(Organization, items if isinstance(items, list) else [])
@@ -85,7 +86,7 @@ class AsyncOrganizations(AsyncResource):
         await self._request("PATCH", f"/api/organizations/{id}", json=params)
         return await self.get(id)
 
-    async def list_members(self, org_id: str) -> list[OrganizationMember]:
+    async def list_members(self, org_id: str) -> builtins.list[OrganizationMember]:
         resp = await self._request("GET", f"/api/organizations/{org_id}/members")
         items = resp.get("members", resp.get("data", []))
         return self._parse_list(OrganizationMember, items if isinstance(items, list) else [])
@@ -107,7 +108,7 @@ class AsyncOrganizations(AsyncResource):
         data = resp.get("data", resp.get("invite", resp))
         return self._parse(Invite, data)
 
-    async def list_invites(self, org_id: str) -> list[Invite]:
+    async def list_invites(self, org_id: str) -> builtins.list[Invite]:
         resp = await self._request("GET", f"/api/organizations/{org_id}/invites")
         items = resp.get("invites", resp.get("data", []))
         return self._parse_list(Invite, items if isinstance(items, list) else [])

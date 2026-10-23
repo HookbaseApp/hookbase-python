@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from typing import Any
 
 from .._pagination import (
@@ -57,7 +58,7 @@ class Filters(SyncResource):
 
     def test(
         self,
-        conditions: list[FilterCondition | dict[str, Any]],
+        conditions: builtins.list[FilterCondition | dict[str, Any]],
         payload: Any,
         *,
         logic: str | None = None,
@@ -104,7 +105,7 @@ class AsyncFilters(AsyncResource):
 
     async def test(
         self,
-        conditions: list[FilterCondition | dict[str, Any]],
+        conditions: builtins.list[FilterCondition | dict[str, Any]],
         payload: Any,
         *,
         logic: str | None = None,

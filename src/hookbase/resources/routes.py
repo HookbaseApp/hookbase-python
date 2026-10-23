@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from typing import Any
 
 from .._pagination import (
@@ -76,17 +77,17 @@ class Routes(SyncResource):
             json={"ids": ids, "isActive": is_active},
         )
 
-    def bulk_delete(self, ids: list[str]) -> BulkDeleteResult:
+    def bulk_delete(self, ids: builtins.list[str]) -> BulkDeleteResult:
         resp = self._request("DELETE", "/api/routes/bulk", json={"ids": ids})
         return self._parse(BulkDeleteResult, resp)
 
-    def export(self, *, ids: list[str] | None = None) -> dict[str, Any]:
+    def export(self, *, ids: builtins.list[str] | None = None) -> dict[str, Any]:
         params = {"ids": ",".join(ids)} if ids else None
         return self._request("GET", "/api/routes/export", params=params)
 
     def import_routes(
         self,
-        routes: list[dict[str, Any]],
+        routes: builtins.list[dict[str, Any]],
         *,
         conflict_strategy: str = "skip",
         validate_only: bool = False,
@@ -156,17 +157,17 @@ class AsyncRoutes(AsyncResource):
             json={"ids": ids, "isActive": is_active},
         )
 
-    async def bulk_delete(self, ids: list[str]) -> BulkDeleteResult:
+    async def bulk_delete(self, ids: builtins.list[str]) -> BulkDeleteResult:
         resp = await self._request("DELETE", "/api/routes/bulk", json={"ids": ids})
         return self._parse(BulkDeleteResult, resp)
 
-    async def export(self, *, ids: list[str] | None = None) -> dict[str, Any]:
+    async def export(self, *, ids: builtins.list[str] | None = None) -> dict[str, Any]:
         params = {"ids": ",".join(ids)} if ids else None
         return await self._request("GET", "/api/routes/export", params=params)
 
     async def import_routes(
         self,
-        routes: list[dict[str, Any]],
+        routes: builtins.list[dict[str, Any]],
         *,
         conflict_strategy: str = "skip",
         validate_only: bool = False,

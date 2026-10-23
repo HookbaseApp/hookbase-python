@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from typing import Any
 
 from ..models.api_keys import ApiKey, ApiKeyWithSecret, CreateApiKeyParams
@@ -7,7 +8,7 @@ from ._base import AsyncResource, SyncResource, _to_body
 
 
 class ApiKeys(SyncResource):
-    def list(self) -> list[ApiKey]:
+    def list(self) -> builtins.list[ApiKey]:
         resp = self._request("GET", "/api/api-keys")
         items = resp.get("apiKeys", resp.get("data", []))
         return self._parse_list(ApiKey, items if isinstance(items, list) else [])
@@ -23,7 +24,7 @@ class ApiKeys(SyncResource):
 
 
 class AsyncApiKeys(AsyncResource):
-    async def list(self) -> list[ApiKey]:
+    async def list(self) -> builtins.list[ApiKey]:
         resp = await self._request("GET", "/api/api-keys")
         items = resp.get("apiKeys", resp.get("data", []))
         return self._parse_list(ApiKey, items if isinstance(items, list) else [])

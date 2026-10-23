@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from typing import Any
 
 from .._pagination import (
@@ -65,7 +66,9 @@ class Subscriptions(SyncResource):
     def delete(self, id: str) -> None:
         self._request("DELETE", f"/api/webhook-subscriptions/{id}")
 
-    def bulk_create(self, endpoint_id: str, event_type_ids: list[str]) -> list[Subscription]:
+    def bulk_create(
+        self, endpoint_id: str, event_type_ids: builtins.list[str],
+    ) -> builtins.list[Subscription]:
         resp = self._request("POST", "/api/webhook-subscriptions/bulk", json={
             "endpointId": endpoint_id,
             "eventTypeIds": event_type_ids,
@@ -116,7 +119,9 @@ class AsyncSubscriptions(AsyncResource):
     async def delete(self, id: str) -> None:
         await self._request("DELETE", f"/api/webhook-subscriptions/{id}")
 
-    async def bulk_create(self, endpoint_id: str, event_type_ids: list[str]) -> list[Subscription]:
+    async def bulk_create(
+        self, endpoint_id: str, event_type_ids: builtins.list[str],
+    ) -> builtins.list[Subscription]:
         resp = await self._request("POST", "/api/webhook-subscriptions/bulk", json={
             "endpointId": endpoint_id,
             "eventTypeIds": event_type_ids,

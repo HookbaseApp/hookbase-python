@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from typing import Any
 
 from .._pagination import (
@@ -55,7 +56,7 @@ class DLQ(SyncResource):
         data = resp.get("data", resp)
         return self._parse(DlqRetryResult, data)
 
-    def retry_bulk(self, ids: list[str]) -> DlqBulkRetryResult:
+    def retry_bulk(self, ids: builtins.list[str]) -> DlqBulkRetryResult:
         resp = self._request(
             "POST", "/api/outbound-messages/dlq/retry-bulk", json={"messageIds": ids},
         )
@@ -64,7 +65,7 @@ class DLQ(SyncResource):
     def delete(self, id: str) -> None:
         self._request("DELETE", f"/api/outbound-messages/dlq/{id}")
 
-    def bulk_delete(self, ids: list[str]) -> DlqBulkDeleteResult:
+    def bulk_delete(self, ids: builtins.list[str]) -> DlqBulkDeleteResult:
         resp = self._request(
             "DELETE", "/api/outbound-messages/dlq/bulk", json={"messageIds": ids},
         )
@@ -103,7 +104,7 @@ class AsyncDLQ(AsyncResource):
         data = resp.get("data", resp)
         return self._parse(DlqRetryResult, data)
 
-    async def retry_bulk(self, ids: list[str]) -> DlqBulkRetryResult:
+    async def retry_bulk(self, ids: builtins.list[str]) -> DlqBulkRetryResult:
         path = "/api/outbound-messages/dlq/retry-bulk"
         resp = await self._request("POST", path, json={"messageIds": ids})
         return self._parse(DlqBulkRetryResult, _unwrap(resp))
@@ -111,7 +112,7 @@ class AsyncDLQ(AsyncResource):
     async def delete(self, id: str) -> None:
         await self._request("DELETE", f"/api/outbound-messages/dlq/{id}")
 
-    async def bulk_delete(self, ids: list[str]) -> DlqBulkDeleteResult:
+    async def bulk_delete(self, ids: builtins.list[str]) -> DlqBulkDeleteResult:
         resp = await self._request(
             "DELETE", "/api/outbound-messages/dlq/bulk", json={"messageIds": ids},
         )
