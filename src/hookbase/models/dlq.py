@@ -131,7 +131,7 @@ class DlqBulkRetryResult(HookbaseModel):
 
 class DlqBulkDeleteResult(HookbaseModel):
     deleted: int = 0
-    """How many IDs were submitted; the API does not report how many were actually in the DLQ."""
+    """How many of the IDs were in the DLQ and were removed. Unknown IDs are not counted."""
 
     total: int = 0
     """Deprecated: mirrors `deleted`."""
