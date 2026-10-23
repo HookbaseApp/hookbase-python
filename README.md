@@ -320,7 +320,9 @@ absolute http(s) URL) are raised for requests that got no response.
 Up to `max_retries` retries (default 3):
 
 - **429** is retried for every method after `Retry-After` (seconds or an HTTP date; 60 s
-  when the header is missing or unusable).
+  when the header is missing or unusable), as long as that wait is at most 60 s. A longer
+  `Retry-After` is not waited for: the `RateLimitError` is raised at once with `retry_after`
+  set, so you decide how to spend that time.
 - **Any 5xx, read timeouts and dropped connections** are retried with exponential backoff
   (1, 2, 4 ... s, capped at 10 s, plus up to 1 s jitter) for every method except POST. A POST
   is retried only when it carries an idempotency key (`outbound.messages.send` always does).
@@ -359,8 +361,9 @@ source = client.sources.create({"name": "GitHub", "slug": "github", "provider": 
   and `close()` no longer closes it.
 - `timeout=None` now means no timeout; leave `timeout` out to get the default.
 - Every 5xx (not only 500/502/503/504) is retried for retry-safe requests, and `Retry-After`
-  may be an HTTP date. An empty 2xx body returns `None`; a 2xx body that is not valid JSON
-  raises `APIError` (`code="invalid_response"`).
+  may be an HTTP date. A 429 whose `Retry-After` is longer than 60 s is no longer slept
+  through: `RateLimitError` is raised at once, `retry_after` set. An empty 2xx body returns
+  `None`; a 2xx body that is not valid JSON raises `APIError` (`code="invalid_response"`).
 - `Webhook("whsec_...")` raises `ValueError` for a secret that is not valid base64, at
   construction rather than on the first `verify()`.
 - `analytics.dashboard()` returns the API's real shape (`overview`, `latency`, `errors`, ...).

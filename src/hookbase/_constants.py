@@ -5,6 +5,9 @@ DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_RETRIES = 3
 #: Seconds to wait before retrying a 429 that has no usable ``Retry-After`` header.
 DEFAULT_RETRY_AFTER = 60.0
+#: The longest ``Retry-After`` (seconds) the client sleeps through before retrying a 429. A
+#: longer wait (a quota window, a far-off HTTP-date) raises the RateLimitError at once instead.
+MAX_RETRY_AFTER = 60.0
 
 
 class NotGiven:

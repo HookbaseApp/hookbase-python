@@ -14,6 +14,7 @@ from ._constants import (
     DEFAULT_MAX_RETRIES,
     DEFAULT_RETRY_AFTER,
     DEFAULT_TIMEOUT,
+    MAX_RETRY_AFTER,
     NOT_GIVEN,
     NotGiven,
 )
@@ -106,6 +107,16 @@ def _decode_body(resp: httpx.Response) -> Any:
             code="invalid_response",
             request_id=resp.headers.get("x-request-id"),
         ) from exc
+
+
+def _worth_waiting(error: APIError) -> bool:
+    """Whether to sleep and retry a retryable error, or hand it back now.
+
+    A 429 whose ``Retry-After`` is longer than MAX_RETRY_AFTER (a quota window, a far-off
+    HTTP-date) is raised at once with ``retry_after`` set, so the caller decides how to spend
+    that time. Everything else that reached this point waits out its backoff.
+    """
+    return not isinstance(error, RateLimitError) or error.retry_after <= MAX_RETRY_AFTER
 
 
 def _backoff(attempt: int) -> float:
@@ -284,13 +295,12 @@ class SyncTransport(_BaseTransport):
 
             last_exc = error
 
-            if attempt < self._max_retries:
-                if isinstance(error, RateLimitError):
-                    time.sleep(error.retry_after)
-                else:
-                    time.sleep(_backoff(attempt))
-            else:
+            if attempt >= self._max_retries or not _worth_waiting(error):
                 raise error
+            if isinstance(error, RateLimitError):
+                time.sleep(error.retry_after)
+            else:
+                time.sleep(_backoff(attempt))
 
         if last_exc is not None:
             raise last_exc
@@ -370,13 +380,12 @@ class AsyncTransport(_BaseTransport):
 
             last_exc = error
 
-            if attempt < self._max_retries:
-                if isinstance(error, RateLimitError):
-                    await asyncio.sleep(error.retry_after)
-                else:
-                    await asyncio.sleep(_backoff(attempt))
-            else:
+            if attempt >= self._max_retries or not _worth_waiting(error):
                 raise error
+            if isinstance(error, RateLimitError):
+                await asyncio.sleep(error.retry_after)
+            else:
+                await asyncio.sleep(_backoff(attempt))
 
         if last_exc is not None:
             raise last_exc

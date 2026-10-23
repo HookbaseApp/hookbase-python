@@ -1,7 +1,8 @@
 """Retry policy, Retry-After handling and response decoding of both transports.
 
 Policy (shared by every Hookbase SDK):
-* 429 is retried for every method, after ``Retry-After``.
+* 429 is retried for every method, after ``Retry-After``, as long as that wait is at most 60 s.
+  A longer one raises the RateLimitError at once, ``retry_after`` set.
 * 5xx, read timeouts and dropped connections are retried only when the request is safe to
   repeat: any method but POST, or a POST that carries an idempotency key.
 * A connection that was never made is always retried.
@@ -127,6 +128,39 @@ def test_429_gives_up_after_max_retries(mock_api, sleeps):
     assert exc.value.retry_after == 2.0
     assert exc.value.code == "RATE_LIMITED"
     assert exc.value.request_id == "req_9"
+
+
+def test_429_retry_after_over_60s_is_raised_at_once(mock_api, client, sleeps):
+    route = mock_api.get(SOURCES).mock(return_value=httpx.Response(
+        429, json={"error": "Quota exhausted"}, headers={"Retry-After": "3600"},
+    ))
+    with pytest.raises(RateLimitError) as exc:
+        client.sources.list()
+    assert route.call_count == 1
+    assert sleeps == []
+    assert exc.value.retry_after == 3600.0
+
+
+def test_429_retry_after_http_date_over_60s_is_raised_at_once(mock_api, client, sleeps):
+    when = datetime.now(timezone.utc) + timedelta(hours=2)
+    route = mock_api.get(SOURCES).mock(return_value=httpx.Response(
+        429, json={"error": "Quota"}, headers={"Retry-After": format_datetime(when, usegmt=True)},
+    ))
+    with pytest.raises(RateLimitError) as exc:
+        client.sources.list()
+    assert route.call_count == 1
+    assert sleeps == []
+    assert 60.0 < exc.value.retry_after <= 7200.0
+
+
+def test_429_retry_after_exactly_60s_is_still_retried(mock_api, client, sleeps):
+    route = mock_api.get(SOURCES).mock(side_effect=[
+        httpx.Response(429, json={"error": "Too many"}, headers={"Retry-After": "60"}),
+        httpx.Response(200, json=OK_LIST),
+    ])
+    client.sources.list()
+    assert route.call_count == 2
+    assert sleeps == [60.0]
 
 
 # ----------------------------------------------------------------------------- 5xx
@@ -288,6 +322,29 @@ async def test_async_429_then_success(mock_api, sleeps):
         await client.sources.list()
     assert route.call_count == 2
     assert sleeps == [4.0]
+
+
+async def test_async_429_retry_after_over_60s_is_raised_at_once(mock_api, sleeps):
+    route = mock_api.get(SOURCES).mock(return_value=httpx.Response(
+        429, json={"error": "Quota exhausted"}, headers={"Retry-After": "3600"},
+    ))
+    async with AsyncHookbase(api_key=TEST_API_KEY) as client:
+        with pytest.raises(RateLimitError) as exc:
+            await client.sources.list()
+    assert route.call_count == 1
+    assert sleeps == []
+    assert exc.value.retry_after == 3600.0
+
+
+async def test_async_429_retry_after_exactly_60s_is_still_retried(mock_api, sleeps):
+    route = mock_api.get(SOURCES).mock(side_effect=[
+        httpx.Response(429, json={"error": "Too many"}, headers={"Retry-After": "60"}),
+        httpx.Response(200, json=OK_LIST),
+    ])
+    async with AsyncHookbase(api_key=TEST_API_KEY) as client:
+        await client.sources.list()
+    assert route.call_count == 2
+    assert sleeps == [60.0]
 
 
 async def test_async_5xx_get_backoff_and_give_up(mock_api, sleeps):
