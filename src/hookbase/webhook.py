@@ -9,6 +9,7 @@ import math
 import re
 import secrets
 import time
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from .errors import WebhookVerificationError
@@ -78,6 +79,9 @@ class Webhook:
             ed = _ed25519()
             self._ed25519_private = ed.Ed25519PrivateKey.from_private_bytes(raw[:32])
             self._ed25519_public = ed.Ed25519PublicKey.from_public_bytes(raw[32:])
+        # Decode an HMAC secret once, here, so a malformed one fails at construction with a
+        # ValueError instead of escaping verify() as a binascii.Error on the first request.
+        self._hmac_key = b"" if self._ed25519_public is not None else self._decode_secret()
 
     @property
     def signature_scheme(self) -> str:
@@ -90,7 +94,7 @@ class Webhook:
     def verify(
         self,
         payload: str | bytes,
-        headers: dict[str, str],
+        headers: Mapping[str, str],
         *,
         tolerance: int = DEFAULT_TOLERANCE,
     ) -> dict[str, Any]:
@@ -99,7 +103,9 @@ class Webhook:
         Args:
             payload: Raw request body as a string or bytes.
             headers: Request headers containing ``webhook-id``,
-                ``webhook-timestamp``, and ``webhook-signature``.
+                ``webhook-timestamp``, and ``webhook-signature``: a ``dict`` or any
+                mapping (Flask/Django/Starlette header objects work as they are).
+                Names are matched case-insensitively.
             tolerance: Maximum age of the webhook in seconds (default 300).
 
         Returns:
@@ -213,19 +219,19 @@ class Webhook:
             self._verify_ed25519(signed_content.encode("utf-8"), signatures)
             return
 
-        expected = self._sign(signed_content)
+        expected_bytes = self._hmac(signed_content)
 
         for version, sig in signatures:
-            if version == "v1":
-                try:
-                    expected_bytes = base64.b64decode(expected)
-                    actual_bytes = base64.b64decode(sig)
-                    if hmac.compare_digest(expected_bytes, actual_bytes):
-                        return
-                except Exception:
-                    continue
+            if version != "v1":
+                continue
+            try:
+                actual_bytes = base64.b64decode(sig, validate=True)
+            except (ValueError, binascii.Error):
+                continue
+            if hmac.compare_digest(expected_bytes, actual_bytes):
+                return
 
-        raise WebhookVerificationError("Webhook signature verification failed")
+        raise _verification_failed("hmac-sha256", signatures)
 
     def _verify_ed25519(self, data: bytes, signatures: list[tuple[str, str]]) -> None:
         """Accept if any ``v1a`` entry is a valid Ed25519 signature over ``data``."""
@@ -247,12 +253,13 @@ class Webhook:
             except InvalidSignature:
                 continue
 
-        raise WebhookVerificationError("Webhook signature verification failed")
+        raise _verification_failed("ed25519", signatures)
+
+    def _hmac(self, signed_content: str) -> bytes:
+        return hmac.new(self._hmac_key, signed_content.encode("utf-8"), hashlib.sha256).digest()
 
     def _sign(self, signed_content: str) -> str:
-        key = self._decode_secret()
-        mac = hmac.new(key, signed_content.encode("utf-8"), hashlib.sha256)
-        return base64.b64encode(mac.digest()).decode("utf-8")
+        return base64.b64encode(self._hmac(signed_content)).decode("utf-8")
 
     def _decode_secret(self) -> bytes:
         """Decode the secret to key bytes the way the API's `decodeSecret` does.
@@ -269,7 +276,16 @@ class Webhook:
                 secret = secret[3:]
         if _LEGACY_HEX_SECRET.fullmatch(secret):
             return bytes.fromhex(secret)
-        return base64.b64decode(secret)
+        try:
+            key = base64.b64decode(secret + "=" * (-len(secret) % 4), validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise ValueError(
+                "Webhook secret is not valid: expected whsec_<base64>, whpk_<base64> "
+                "(Ed25519 public key) or whsk_<base64> (Ed25519 secret key)"
+            ) from exc
+        if not key:
+            raise ValueError("Webhook secret is empty after the whsec_ prefix")
+        return key
 
 
 def _ed25519() -> Any:
@@ -288,11 +304,34 @@ def _b64decode_key(value: str, kind: str) -> bytes:
         raise ValueError(f"Ed25519 {kind} key is not valid base64") from exc
 
 
+_SCHEME_VERSION = {"hmac-sha256": "v1", "ed25519": "v1a"}
+_KEY_HINT = {
+    "hmac-sha256": "verify with the endpoint's whpk_ public key",
+    "ed25519": "verify with the endpoint's whsec_ secret",
+}
+
+
+def _verification_failed(
+    scheme: str, signatures: list[tuple[str, str]]
+) -> WebhookVerificationError:
+    """The failure for no matching signature, naming a key/scheme mismatch when that is why."""
+    wanted = _SCHEME_VERSION[scheme]
+    if not any(version == wanted for version, _ in signatures):
+        other = "ed25519" if scheme == "hmac-sha256" else "hmac-sha256"
+        if any(version == _SCHEME_VERSION[other] for version, _ in signatures):
+            return WebhookVerificationError(
+                f"Webhook signature verification failed: no {wanted} signature in the header. "
+                f"The endpoint signs with {other} ({_SCHEME_VERSION[other]}); "
+                f"{_KEY_HINT[scheme]}"
+            )
+    return WebhookVerificationError("Webhook signature verification failed")
+
+
 def _parse_signatures(header: str) -> list[tuple[str, str]]:
     """Parse ``v1,<sig> v1a,<sig>`` format into list of (version, signature)."""
     result: list[tuple[str, str]] = []
-    for part in header.split(" "):
+    for part in header.split():
         pieces = part.split(",", 1)
-        if len(pieces) == 2:
+        if len(pieces) == 2 and pieces[1]:
             result.append((pieces[0], pieces[1]))
     return result

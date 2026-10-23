@@ -397,3 +397,169 @@ def test_generate_test_headers_timestamp_none_uses_now(wh):
     before = math.floor(time.time())
     headers = wh.generate_test_headers("{}")
     assert before <= int(headers["webhook-timestamp"]) <= math.floor(time.time())
+
+
+# --------------------------------------------------------------------------- interop vectors
+#
+# Fixed vectors shared with the other SDKs' suites. The HMAC ones are the Standard Webhooks
+# reference vector and signatures produced by api/src/utils/outbound-signature.ts
+# (signOutboundPayload); the Ed25519 one was produced with Node WebCrypto exactly as the API's
+# computeEd25519Signature does. They prove this SDK verifies what the API sends, byte for byte.
+
+SPEC_SECRET = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw"
+FOREVER = 100 * 365 * 24 * 3600
+
+
+def _hdrs(msg_id: str, ts: str, sig: str) -> dict[str, str]:
+    return {"webhook-id": msg_id, "webhook-timestamp": ts, "webhook-signature": sig}
+
+
+def test_standard_webhooks_reference_vector():
+    headers = _hdrs(
+        "msg_p5jXN8AQM9LWM0D4loKWxJek", "1614265330",
+        "v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE=",
+    )
+    wh = Webhook(SPEC_SECRET)
+    assert wh.verify('{"test": 2432232314}', headers, tolerance=FOREVER) == {"test": 2432232314}
+    with pytest.raises(WebhookVerificationError):
+        wh.verify('{"test": 2432232315}', headers, tolerance=FOREVER)
+    generated = wh.generate_test_headers(
+        '{"test": 2432232314}', webhook_id="msg_p5jXN8AQM9LWM0D4loKWxJek", timestamp=1614265330,
+    )
+    assert generated == headers
+
+
+def test_api_dual_signed_rotation_vector_verifies_with_either_secret():
+    header = (
+        "v1,Y6hpmiCotZcqtOf/dgG5KARpeTgXngac9wBOMk/vcAU= "
+        "v1,qKP4SzATWLYZrd+IgPQDYbv3vn2xSk5S3WIWD9HZlE4="
+    )
+    payload = '{"note":"café ✓"}'
+    headers = _hdrs("msg_rot", "1700000000", header)
+    assert Webhook(SPEC_SECRET).verify(payload, headers, tolerance=FOREVER)
+    previous = "whsec_op_AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
+    assert Webhook(previous).verify(payload.encode("utf-8"), headers, tolerance=FOREVER)
+    with pytest.raises(WebhookVerificationError):
+        Webhook("whsec_" + base64.b64encode(bytes(32)).decode()).verify(
+            payload, headers, tolerance=FOREVER
+        )
+
+
+def test_api_legacy_hex_secret_vector():
+    headers = _hdrs("msg_hex", "1700000000", "v1,lr9mrarVPLrXzQN2UluMykHR4G3gh32rVpBJ1F5FeKM=")
+    hex_secret = "whsec_0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+    same_bytes_b64 = "whsec_AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
+    for secret in (hex_secret, same_bytes_b64):
+        assert Webhook(secret).verify('{"a":1}', headers, tolerance=FOREVER) == {"a": 1}
+
+
+def test_api_webcrypto_ed25519_vector():
+    whpk = "whpk_a7kJGlsS6YsGk3vSm+i9CnE5krydSheW91/PIrZ0B38="
+    payload = '{"type":"order.created","data":{"id":"ord_1","note":"café ✓"}}'
+    sig = (
+        "v1a,7LcI9MK+cWjiZBdWdyzi48fk0WzGSl7XCPpDhwhltUWImAsmzvNLtA560Lkibj/2s109CUsYSKoS6A7Xw/7+Ag=="
+    )
+    wh = Webhook(whpk)
+    event = wh.verify(payload, _hdrs("msg_2mXq9Vt3hX1aZ8cK", "1761091200", sig), tolerance=FOREVER)
+    assert event["data"]["note"] == "café ✓"
+    with pytest.raises(WebhookVerificationError):
+        wh.verify(payload, _hdrs("msg_2mXq9Vt3hX1aZ8cK", "1761091201", sig), tolerance=FOREVER)
+
+
+# --------------------------------------------------------------------------- inputs
+
+
+@pytest.mark.parametrize("secret", [
+    "whsec_not*base64!",
+    "whsec_abc$def",
+    "whsec_",
+    "whsec_op_",
+    "whsec_dGVzdA-_",  # URL-safe alphabet is not what the API issues
+])
+def test_malformed_hmac_secret_is_rejected_at_construction(secret):
+    with pytest.raises(ValueError, match="Webhook secret"):
+        Webhook(secret)
+
+
+def test_unpadded_base64_secret_is_accepted():
+    raw = base64.b64encode(b"0123456789abcdef0123456789abcdef").decode()
+    assert raw.endswith("=")
+    padded, unpadded = Webhook("whsec_" + raw), Webhook("whsec_" + raw.rstrip("="))
+    headers = padded.generate_test_headers("{}")
+    assert unpadded.verify("{}", headers) == {}
+
+
+def test_headers_can_be_any_mapping(wh):
+    import httpx
+
+    payload = '{"k":1}'
+    generated = wh.generate_test_headers(payload)
+    # httpx.Headers is a case-insensitive Mapping, like the header objects of web frameworks.
+    headers = httpx.Headers({k.upper(): v for k, v in generated.items()})
+    assert wh.verify(payload, headers) == {"k": 1}
+
+
+def test_future_timestamp_outside_tolerance_fails(wh):
+    payload = "{}"
+    headers = wh.generate_test_headers(payload, timestamp=math.floor(time.time()) + 600)
+    with pytest.raises(WebhookVerificationError, match="outside tolerance"):
+        wh.verify(payload, headers)
+
+
+def test_timestamp_just_inside_tolerance_passes(wh):
+    payload = "{}"
+    headers = wh.generate_test_headers(payload, timestamp=math.floor(time.time()) - 290)
+    assert wh.verify(payload, headers) == {}
+
+
+def test_extra_whitespace_between_signatures_is_tolerated(wh):
+    payload = "{}"
+    good = wh.generate_test_headers(payload)
+    good["webhook-signature"] = "  v1,AAAA   " + good["webhook-signature"] + "  "
+    assert wh.verify(payload, good) == {}
+
+
+def test_unknown_versions_and_empty_entries_are_ignored(wh):
+    payload = "{}"
+    good = wh.generate_test_headers(payload)
+    good["webhook-signature"] = "v2,xyz v1, " + good["webhook-signature"]
+    assert wh.verify(payload, good) == {}
+
+
+def test_non_base64_v1_signature_is_skipped_not_raised(wh):
+    payload = "{}"
+    headers = wh.generate_test_headers(payload)
+    headers["webhook-signature"] = "v1,***not-base64***"
+    with pytest.raises(WebhookVerificationError, match="verification failed"):
+        wh.verify(payload, headers)
+
+
+def test_tampered_id_or_timestamp_fails(wh):
+    payload = "{}"
+    headers = wh.generate_test_headers(payload)
+    with pytest.raises(WebhookVerificationError):
+        wh.verify(payload, {**headers, "webhook-id": "msg_other"})
+    ts = str(int(headers["webhook-timestamp"]) - 1)
+    with pytest.raises(WebhookVerificationError):
+        wh.verify(payload, {**headers, "webhook-timestamp": ts})
+
+
+def test_hmac_key_on_ed25519_header_names_the_mismatch():
+    headers = _hdrs(
+        "msg_2mXq9Vt3hX1aZ8cK", str(math.floor(time.time())),
+        "v1a," + base64.b64encode(bytes(64)).decode(),
+    )
+    with pytest.raises(WebhookVerificationError, match="no v1 signature.*whpk_"):
+        Webhook(SPEC_SECRET).verify("{}", headers)
+
+
+def test_ed25519_key_on_hmac_header_names_the_mismatch(wh):
+    headers = wh.generate_test_headers("{}")
+    with pytest.raises(WebhookVerificationError, match="no v1a signature.*whsec_"):
+        Webhook("whpk_a7kJGlsS6YsGk3vSm+i9CnE5krydSheW91/PIrZ0B38=").verify("{}", headers)
+
+
+def test_signature_scheme_property():
+    assert Webhook(SPEC_SECRET).signature_scheme == "hmac-sha256"
+    whpk = "whpk_a7kJGlsS6YsGk3vSm+i9CnE5krydSheW91/PIrZ0B38="
+    assert Webhook(whpk).signature_scheme == "ed25519"
