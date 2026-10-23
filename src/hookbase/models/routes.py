@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from ._base import HookbaseModel
 from .filters import FilterCondition
@@ -33,7 +33,7 @@ class Route(HookbaseModel):
     failure_threshold: int | None = None
     failover_destination_ids: list[str] | None = None
     failover_after_attempts: int | None = None
-    expected_response: str | None = None
+    expected_response: Any = None
     created_at: str = ""
     updated_at: str = ""
 
@@ -56,7 +56,7 @@ class CreateRouteParams(HookbaseModel):
     failure_threshold: int | None = None
     failover_destination_ids: list[str] | None = None
     failover_after_attempts: int | None = None
-    expected_response: str | None = None
+    expected_response: Any = None
 
 
 class UpdateRouteParams(HookbaseModel):
@@ -77,7 +77,7 @@ class UpdateRouteParams(HookbaseModel):
     failure_threshold: int | None = None
     failover_destination_ids: list[str] | None = None
     failover_after_attempts: int | None = None
-    expected_response: str | None = None
+    expected_response: Any = None
 
 
 class CircuitStatusInfo(HookbaseModel):

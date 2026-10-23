@@ -525,7 +525,12 @@ def _extract_offset_data(
         else:
             items = []
 
-    return items if isinstance(items, list) else [], total, page, page_size
+    items = items if isinstance(items, list) else []
+    if "pagination" not in resp:
+        # An unpaginated list (``GET /api/schemas`` returns every schema at once): one page that
+        # holds everything, so ``total`` is right and iteration stops after it.
+        return items, len(items), 1, max(len(items), 1)
+    return items, total, page, page_size
 
 
 def _extract_cursor_data(

@@ -55,6 +55,12 @@ class CronJobs(SyncResource):
         data = resp.get("execution", resp)
         return self._parse(CronJobExecution, data)
 
+    def list_executions(self, id: str, *, limit: int | None = None) -> list[CronJobExecution]:
+        """The job's most recent executions, newest first (``limit`` 1-100, default 20)."""
+        params = self._clean_params({"limit": limit})
+        resp = self._request("GET", f"/api/cron/{id}/executions", params=params)
+        return self._parse_list(CronJobExecution, resp.get("executions", []))
+
     def list_groups(self) -> list[CronGroup]:
         resp = self._request("GET", "/api/cron-groups")
         items = resp.get("groups", resp.get("data", []))
@@ -102,6 +108,12 @@ class AsyncCronJobs(AsyncResource):
         resp = await self._request("POST", f"/api/cron/{id}/trigger")
         data = resp.get("execution", resp)
         return self._parse(CronJobExecution, data)
+
+    async def list_executions(self, id: str, *, limit: int | None = None) -> list[CronJobExecution]:
+        """The job's most recent executions, newest first (``limit`` 1-100, default 20)."""
+        params = self._clean_params({"limit": limit})
+        resp = await self._request("GET", f"/api/cron/{id}/executions", params=params)
+        return self._parse_list(CronJobExecution, resp.get("executions", []))
 
     async def list_groups(self) -> list[CronGroup]:
         resp = await self._request("GET", "/api/cron-groups")

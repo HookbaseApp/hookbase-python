@@ -14,6 +14,12 @@ class PortalToken(HookbaseModel):
     created_at: str = ""
     is_expired: bool | None = None
     is_revoked: bool | None = None
+    last_used_at: str | None = None
+    use_count: int | None = None
+    revoked_at: str | None = None
+    api_key_id: str | None = None
+    """The API key that created the token, when one did."""
+    revoked_by_api_key_id: str | None = None
 
 
 class CreatePortalTokenParams(HookbaseModel):

@@ -7,7 +7,7 @@ from pydantic import field_validator
 
 from ._base import HookbaseModel
 
-CronJobExecutionStatus = Literal["success", "failed"]
+CronJobExecutionStatus = Literal["success", "failed", "running"]
 
 
 class CronJob(HookbaseModel):
@@ -48,10 +48,21 @@ class CronJob(HookbaseModel):
 
 
 class CronJobExecution(HookbaseModel):
+    """One run of a cron job: a ``trigger()`` result or an entry of ``list_executions()``."""
+
     id: str
     status: CronJobExecutionStatus = "success"
     response_status: int | None = None
-    latency_ms: int = 0
+    latency_ms: int | None = 0
+    error: str | None = None
+    """Why a ``trigger()`` failed (no response, DNS failure, timeout...)."""
+    error_message: str | None = None
+    """The same, as stored on a past execution (``list_executions()``)."""
+    cron_job_id: str | None = None
+    response_body: str | None = None
+    response_headers: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
 
 
 class CreateCronJobParams(HookbaseModel):

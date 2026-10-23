@@ -1,4 +1,23 @@
-from .analytics import AnalyticsTimeline, DashboardData
+from .analytics import (
+    AnalyticsTimeline,
+    DashboardData,
+    DashboardOverview,
+    DestinationErrorCount,
+    DestinationPerformance,
+    ErrorBreakdown,
+    ErrorTrendPoint,
+    LatencyBucket,
+    LatencyPercentiles,
+    LatencyStats,
+    LatencyTrendPoint,
+    PayloadSizeDistribution,
+    RetryBucket,
+    RetryCounts,
+    RetryStats,
+    RoutePerformance,
+    SourcePerformance,
+    StatusCodeCount,
+)
 from .api_keys import ApiKey, ApiKeyWithSecret, CreateApiKeyParams
 from .applications import Application, CreateApplicationParams, UpdateApplicationParams
 from .catalog import (
@@ -128,6 +147,7 @@ from .schemas import (
     CreateSchemaParams,
     Schema,
     SchemaRoute,
+    SchemaValidationError,
     SchemaValidationResult,
     UpdateSchemaParams,
 )
@@ -160,12 +180,28 @@ from .transforms import (
     TransformType,
     UpdateTransformParams,
 )
-from .tunnels import CreateTunnelParams, Tunnel
+from .tunnels import CreateTunnelParams, Tunnel, TunnelToken, UpdateTunnelParams
 
 __all__ = [
     # Analytics
     "AnalyticsTimeline",
     "DashboardData",
+    "DashboardOverview",
+    "DestinationErrorCount",
+    "DestinationPerformance",
+    "ErrorBreakdown",
+    "ErrorTrendPoint",
+    "LatencyBucket",
+    "LatencyPercentiles",
+    "LatencyStats",
+    "LatencyTrendPoint",
+    "PayloadSizeDistribution",
+    "RetryBucket",
+    "RetryCounts",
+    "RetryStats",
+    "RoutePerformance",
+    "SourcePerformance",
+    "StatusCodeCount",
     # API Keys
     "ApiKey",
     "ApiKeyWithSecret",
@@ -297,6 +333,7 @@ __all__ = [
     # Schemas
     "CreateSchemaParams",
     "Schema",
+    "SchemaValidationError",
     "SchemaValidationResult",
     "UpdateSchemaParams",
     "SchemaRoute",
@@ -328,5 +365,7 @@ __all__ = [
     "UpdateTransformParams",
     # Tunnels
     "CreateTunnelParams",
+    "TunnelToken",
+    "UpdateTunnelParams",
     "Tunnel",
 ]

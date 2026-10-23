@@ -40,9 +40,14 @@ class Transforms(SyncResource):
         return self._parse(Transform, resp.get("transform", resp))
 
     def update(self, id: str, params: UpdateTransformParams | dict[str, Any]) -> Transform:
+        """Update a transform and return it as stored.
+
+        The API answers the PATCH with ``{"success": true}`` only, so this reads the transform
+        back with a second request.
+        """
         body = _to_body(params)
-        resp = self._request("PATCH", f"/api/transforms/{id}", json=body)
-        return self._parse(Transform, resp.get("transform", resp))
+        self._request("PATCH", f"/api/transforms/{id}", json=body)
+        return self.get(id)
 
     def delete(self, id: str) -> None:
         self._request("DELETE", f"/api/transforms/{id}")
@@ -90,9 +95,10 @@ class AsyncTransforms(AsyncResource):
         return self._parse(Transform, resp.get("transform", resp))
 
     async def update(self, id: str, params: UpdateTransformParams | dict[str, Any]) -> Transform:
+        """Update a transform and return it as stored (a PATCH, then a GET)."""
         body = _to_body(params)
-        resp = await self._request("PATCH", f"/api/transforms/{id}", json=body)
-        return self._parse(Transform, resp.get("transform", resp))
+        await self._request("PATCH", f"/api/transforms/{id}", json=body)
+        return await self.get(id)
 
     async def delete(self, id: str) -> None:
         await self._request("DELETE", f"/api/transforms/{id}")
