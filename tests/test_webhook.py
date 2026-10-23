@@ -209,3 +209,180 @@ def test_verify_rejects_non_utf8_bytes_with_a_verification_error(wh):
     headers = wh.generate_test_headers("x")
     with pytest.raises(WebhookVerificationError):
         wh.verify(b"\xff\xfe", headers)
+
+
+# --- Ed25519 (Standard Webhooks v1a) ---------------------------------------------
+
+ed25519 = pytest.importorskip("cryptography.hazmat.primitives.asymmetric.ed25519")
+_serialization = pytest.importorskip("cryptography.hazmat.primitives.serialization")
+_RAW = _serialization.Encoding.Raw
+
+
+def _server_keypair() -> tuple[str, str, object]:
+    """A key pair serialized exactly as the API's generateEd25519KeyPair does:
+    whsk_<base64 seed || public key>, whpk_<base64 public key>."""
+    priv = ed25519.Ed25519PrivateKey.generate()
+    seed = priv.private_bytes(_RAW, _serialization.PrivateFormat.Raw, _serialization.NoEncryption())
+    pub = priv.public_key().public_bytes(_RAW, _serialization.PublicFormat.Raw)
+    whsk = "whsk_" + base64.b64encode(seed + pub).decode()
+    whpk = "whpk_" + base64.b64encode(pub).decode()
+    return whsk, whpk, priv
+
+
+def _server_sign(priv, msg_id: str, ts: int, payload: str) -> str:
+    """One `webhook-signature` entry as the API's signatureEntry builds it."""
+    sig = priv.sign(f"{msg_id}.{ts}.{payload}".encode())
+    return "v1a," + base64.b64encode(sig).decode()
+
+
+def _v1a_headers(msg_id: str, ts: int, signature: str) -> dict[str, str]:
+    return {"webhook-id": msg_id, "webhook-timestamp": str(ts), "webhook-signature": signature}
+
+
+ED_PAYLOAD = json.dumps({"type": "order.created", "data": {"id": "o_1", "note": "café"}})
+
+
+def test_ed25519_verify_with_public_key():
+    _, whpk, priv = _server_keypair()
+    ts = math.floor(time.time())
+    wh = Webhook(whpk)
+    assert wh.signature_scheme == "ed25519"
+    headers = _v1a_headers("msg_1", ts, _server_sign(priv, "msg_1", ts, ED_PAYLOAD))
+    result = wh.verify(ED_PAYLOAD, headers)
+    assert result["data"]["note"] == "café"
+
+
+def test_ed25519_verify_bytes_payload_and_mixed_case_v1a_headers():
+    _, whpk, priv = _server_keypair()
+    ts = math.floor(time.time())
+    headers = {
+        "Webhook-Id": "msg_1",
+        "Webhook-Timestamp": str(ts),
+        "Webhook-Signature": _server_sign(priv, "msg_1", ts, ED_PAYLOAD),
+    }
+    assert Webhook(whpk).verify(ED_PAYLOAD.encode(), headers)["type"] == "order.created"
+
+
+def test_ed25519_wrong_key_fails():
+    _, _, priv = _server_keypair()
+    _, other_whpk, _ = _server_keypair()
+    ts = math.floor(time.time())
+    with pytest.raises(WebhookVerificationError, match="verification failed"):
+        Webhook(other_whpk).verify(
+            ED_PAYLOAD, _v1a_headers("msg_1", ts, _server_sign(priv, "msg_1", ts, ED_PAYLOAD))
+        )
+
+
+def test_ed25519_tampered_payload_fails():
+    _, whpk, priv = _server_keypair()
+    ts = math.floor(time.time())
+    headers = _v1a_headers("msg_1", ts, _server_sign(priv, "msg_1", ts, ED_PAYLOAD))
+    with pytest.raises(WebhookVerificationError, match="verification failed"):
+        Webhook(whpk).verify(ED_PAYLOAD.replace("o_1", "o_2"), headers)
+
+
+def test_ed25519_expired_timestamp_fails():
+    _, whpk, priv = _server_keypair()
+    ts = math.floor(time.time()) - 600
+    headers = _v1a_headers("msg_1", ts, _server_sign(priv, "msg_1", ts, ED_PAYLOAD))
+    with pytest.raises(WebhookVerificationError, match="outside tolerance"):
+        Webhook(whpk).verify(ED_PAYLOAD, headers)
+    # Same tolerance knob as v1.
+    assert Webhook(whpk).verify(ED_PAYLOAD, headers, tolerance=900)["type"] == "order.created"
+
+
+def test_ed25519_future_timestamp_fails():
+    _, whpk, priv = _server_keypair()
+    ts = math.floor(time.time()) + 600
+    headers = _v1a_headers("msg_1", ts, _server_sign(priv, "msg_1", ts, ED_PAYLOAD))
+    with pytest.raises(WebhookVerificationError, match="outside tolerance"):
+        Webhook(whpk).verify(ED_PAYLOAD, headers)
+
+
+def test_mixed_v1_and_v1a_header_verifies_with_either_key():
+    whsec = SECRET_PREFIXED
+    _, whpk, priv = _server_keypair()
+    ts = math.floor(time.time())
+    v1 = Webhook(whsec).generate_test_headers(ED_PAYLOAD, webhook_id="msg_1", timestamp=ts)[
+        "webhook-signature"
+    ]
+    v1a = _server_sign(priv, "msg_1", ts, ED_PAYLOAD)
+    for sig in (f"{v1} {v1a}", f"{v1a} {v1}"):
+        headers = _v1a_headers("msg_1", ts, sig)
+        assert Webhook(whpk).verify(ED_PAYLOAD, headers)["type"] == "order.created"
+        assert Webhook(whsec).verify(ED_PAYLOAD, headers)["type"] == "order.created"
+
+
+def test_ed25519_key_ignores_v1_entries():
+    # A v1 entry, even a valid HMAC one, never satisfies an Ed25519 verifier.
+    _, whpk, _ = _server_keypair()
+    ts = math.floor(time.time())
+    v1 = Webhook(SECRET_PREFIXED).generate_test_headers(
+        ED_PAYLOAD, webhook_id="msg_1", timestamp=ts
+    )
+    with pytest.raises(WebhookVerificationError, match="verification failed"):
+        Webhook(whpk).verify(ED_PAYLOAD, v1)
+
+
+def test_hmac_secret_ignores_v1a_entries():
+    _, _, priv = _server_keypair()
+    ts = math.floor(time.time())
+    with pytest.raises(WebhookVerificationError, match="verification failed"):
+        Webhook(SECRET_PREFIXED).verify(
+            ED_PAYLOAD, _v1a_headers("msg_1", ts, _server_sign(priv, "msg_1", ts, ED_PAYLOAD))
+        )
+
+
+def test_ed25519_rotation_grace_period_dual_signature():
+    # During a rotation grace period the API sends `v1a,<previous> v1a,<current>`.
+    _, old_whpk, old_priv = _server_keypair()
+    _, new_whpk, new_priv = _server_keypair()
+    _, unrelated_whpk, _ = _server_keypair()
+    ts = math.floor(time.time())
+    old_sig = _server_sign(old_priv, "msg_1", ts, ED_PAYLOAD)
+    new_sig = _server_sign(new_priv, "msg_1", ts, ED_PAYLOAD)
+    sig = f"{old_sig} {new_sig}"
+    headers = _v1a_headers("msg_1", ts, sig)
+    assert Webhook(old_whpk).verify(ED_PAYLOAD, headers)
+    assert Webhook(new_whpk).verify(ED_PAYLOAD, headers)
+    with pytest.raises(WebhookVerificationError):
+        Webhook(unrelated_whpk).verify(ED_PAYLOAD, headers)
+
+
+def test_ed25519_malformed_signature_entries_are_skipped():
+    _, whpk, priv = _server_keypair()
+    ts = math.floor(time.time())
+    good = _server_sign(priv, "msg_1", ts, ED_PAYLOAD)
+    bad = "v1a,!!notbase64!! v1a,c2hvcnQ= v1a,"
+    assert Webhook(whpk).verify(ED_PAYLOAD, _v1a_headers("msg_1", ts, f"{bad} {good}"))
+    with pytest.raises(WebhookVerificationError):
+        Webhook(whpk).verify(ED_PAYLOAD, _v1a_headers("msg_1", ts, bad))
+
+
+def test_ed25519_secret_key_generates_verifiable_test_v1a_headers():
+    whsk, whpk, _ = _server_keypair()
+    signer = Webhook(whsk)
+    assert signer.signature_scheme == "ed25519"
+    headers = signer.generate_test_headers(ED_PAYLOAD)
+    assert headers["webhook-signature"].startswith("v1a,")
+    assert Webhook(whpk).verify(ED_PAYLOAD, headers)["type"] == "order.created"
+    assert signer.verify(ED_PAYLOAD, headers)["type"] == "order.created"
+
+
+def test_ed25519_public_key_cannot_generate_test_headers():
+    _, whpk, _ = _server_keypair()
+    with pytest.raises(ValueError, match="public key"):
+        Webhook(whpk).generate_test_headers(ED_PAYLOAD)
+
+
+def test_ed25519_invalid_keys_are_rejected_at_construction():
+    with pytest.raises(ValueError, match="32 bytes"):
+        Webhook("whpk_" + base64.b64encode(b"short").decode())
+    with pytest.raises(ValueError, match="base64"):
+        Webhook("whpk_not*base64")
+    with pytest.raises(ValueError, match="64 bytes"):
+        Webhook("whsk_" + base64.b64encode(b"x" * 32).decode())
+
+
+def test_hmac_secret_reports_hmac_scheme():
+    assert Webhook(SECRET_PREFIXED).signature_scheme == "hmac-sha256"

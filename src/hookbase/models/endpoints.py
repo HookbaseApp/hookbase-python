@@ -9,6 +9,9 @@ from ._base import HookbaseModel
 
 CircuitState = Literal["closed", "open", "half_open"]
 BackoffType = Literal["exponential", "linear", "fixed"]
+# Standard Webhooks `v1` (HMAC-SHA256) or `v1a` (Ed25519). Responses type the
+# field as plain `str` so a scheme added later does not fail to decode.
+SignatureScheme = Literal["hmac-sha256", "ed25519"]
 
 # The five endpoint settings `PATCH /api/webhook-endpoints/:id` accepts an
 # explicit null for (`.optional().nullable()` in `updateEndpointSchema`). Naming
@@ -68,6 +71,13 @@ class WebhookEndpoint(HookbaseModel):
     """The first twelve characters of the signing secret, then `"..."`."""
     has_secret: bool = False
     secret_version: int = 0
+    signature_scheme: str = "hmac-sha256"
+    """`"hmac-sha256"` (Standard Webhooks `v1`, verify with the secret) or
+    `"ed25519"` (`v1a`, verify with `public_key`). An Ed25519 endpoint's
+    private key is never returned, so `secret` stays empty for it."""
+    public_key: str | None = None
+    """The `whpk_` Ed25519 public key to verify `v1a` signatures with:
+    `Webhook(endpoint.public_key)`. `None` for HMAC endpoints."""
     headers: dict[str, str] | None = None
     header_list: list[CustomHeader] = []
     """Headers in the `[{"name": .., "value": ..}]` form the API sends and
@@ -169,6 +179,9 @@ class EndpointWithSecret(WebhookEndpoint):
 class CreateEndpointParams(HookbaseModel):
     url: str
     description: str | None = None
+    signature_scheme: SignatureScheme | None = None
+    """`"hmac-sha256"` (the default) or `"ed25519"`. For Ed25519 Hookbase
+    generates the key pair and returns only `public_key`."""
     headers: dict[str, str] | list[CustomHeader] | None = None
     timeout_seconds: int | None = None
     rate_limit_per_second: int | None = None
@@ -200,6 +213,9 @@ class CreateEndpointParams(HookbaseModel):
 class UpdateEndpointParams(HookbaseModel):
     url: str | None = None
     description: str | None = None
+    signature_scheme: SignatureScheme | None = None
+    """Switch the endpoint's signature scheme. A new key is generated and the
+    previous one stops signing at once (no grace period)."""
     is_disabled: bool | None = None
     disabled_reason: str | None = None
     headers: dict[str, str] | list[CustomHeader] | None = None
@@ -273,8 +289,17 @@ class EndpointStats(HookbaseModel):
 class RotateSecretResult(HookbaseModel):
     """The result of `POST /api/webhook-endpoints/:id/rotate-secret`."""
 
-    secret: str
-    """The new signing secret. Save it now; no later response repeats it."""
+    secret: str = ""
+    """The new HMAC signing secret. Save it now; no later response repeats it.
+    Empty for an Ed25519 endpoint, whose private key is never returned: read
+    `public_key` instead."""
+    signature_scheme: str = "hmac-sha256"
+    """`"hmac-sha256"` or `"ed25519"`; rotation keeps the endpoint's scheme."""
+    public_key: str | None = None
+    """Ed25519 only: the new `whpk_` public key to verify `v1a` with."""
+    previous_public_key: str | None = None
+    """Ed25519 only: the rotated-out public key. Deliveries during the grace
+    period are signed with both keys, so either verifies them."""
     previous_secret_expires_at: str | None = None
     """Until when deliveries are also signed with the previous secret."""
     secret_version: int | None = None

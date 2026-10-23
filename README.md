@@ -6,6 +6,8 @@ The official Python SDK for the [Hookbase](https://hookbase.app) webhook managem
 
 ```bash
 pip install hookbase
+# To verify Ed25519 (v1a) signed webhooks, include the optional extra:
+pip install 'hookbase[ed25519]'
 ```
 
 ## Quick Start
@@ -206,6 +208,31 @@ except WebhookVerificationError as e:
 # Generate test headers
 headers = wh.generate_test_headers('{"test": true}')
 ```
+
+#### Ed25519 (`v1a`) endpoints
+
+Endpoints created with `signature_scheme="ed25519"` are signed with Ed25519
+(Standard Webhooks `v1a,<sig>`). Hookbase keeps the private key; verify with the
+endpoint's `whpk_` public key. This needs `pip install 'hookbase[ed25519]'`.
+
+```python
+from hookbase.models import CreateEndpointParams
+
+ep = client.outbound.endpoints.create(
+    "app_id", CreateEndpointParams(url="https://example.com/hook", signature_scheme="ed25519")
+)
+wh = Webhook(ep.public_key)  # "whpk_..."; same verify() API, tolerance and errors as v1
+payload = wh.verify(request_body, request_headers)
+
+# Rotation returns the new public key (no secret). During the grace period
+# deliveries carry `v1a,<old> v1a,<new>`, so either key verifies them.
+rotated = client.outbound.endpoints.rotate_secret(ep.id, grace_period=3600)
+rotated.public_key, rotated.previous_public_key
+```
+
+The key decides the scheme (`wh.signature_scheme`): a `whsec_` secret checks
+`v1` entries only and a `whpk_` key checks `v1a` entries only, so a header that
+mixes both verifies with either.
 
 ### Error Handling
 

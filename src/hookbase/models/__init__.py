@@ -68,6 +68,7 @@ from .endpoints import (
     EndpointStats,
     EndpointWithSecret,
     RotateSecretResult,
+    SignatureScheme,
     UpdateEndpointParams,
     WebhookEndpoint,
 )
@@ -202,6 +203,7 @@ __all__ = [
     "EndpointStats",
     "EndpointWithSecret",
     "RotateSecretResult",
+    "SignatureScheme",
     "UpdateEndpointParams",
     "WebhookEndpoint",
     # Event Types

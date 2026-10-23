@@ -545,6 +545,52 @@ def test_rotate_secret_maps_the_response(mock_api, client):
     assert result.previous_secret_valid_until == "2026-10-17T01:00:00.000Z"
 
 
+def test_rotate_secret_on_an_ed25519_endpoint_returns_the_public_keys(mock_api, client):
+    # The API never returns the Ed25519 private key, so the response has no `secret`.
+    mock_api.post("/api/webhook-endpoints/ep_1/rotate-secret").respond(200, json={
+        "signatureScheme": "ed25519",
+        "publicKey": "whpk_new",
+        "previousPublicKey": "whpk_old",
+        "previousSecretExpiresAt": "2026-10-17T01:00:00.000Z",
+        "secretVersion": 2,
+    })
+    result = client.outbound.endpoints.rotate_secret("ep_1")
+    assert result.signature_scheme == "ed25519"
+    assert result.public_key == "whpk_new"
+    assert result.previous_public_key == "whpk_old"
+    assert result.secret == ""
+    assert result.secret_version == 2
+
+
+def test_rotate_secret_on_an_hmac_endpoint_reports_the_scheme(mock_api, client):
+    mock_api.post("/api/webhook-endpoints/ep_1/rotate-secret").respond(200, json={
+        "signatureScheme": "hmac-sha256",
+        "secret": "whsec_new",
+        "secretVersion": 2,
+    })
+    result = client.outbound.endpoints.rotate_secret("ep_1")
+    assert result.signature_scheme == "hmac-sha256"
+    assert result.public_key is None
+
+
+def test_create_ed25519_endpoint_sends_the_scheme_and_reads_the_public_key(mock_api, client):
+    from hookbase.models import CreateEndpointParams
+
+    route = mock_api.post("/api/webhook-endpoints").respond(201, json={"data": {
+        "id": "ep_1", "applicationId": "app_1", "url": "https://example.com/hook",
+        "signatureScheme": "ed25519", "publicKey": "whpk_abc",
+        "secretPrefix": "whsk_...", "hasSecret": True,
+    }})
+    ep = client.outbound.endpoints.create(
+        "app_1",
+        CreateEndpointParams(url="https://example.com/hook", signature_scheme="ed25519"),
+    )
+    assert sent_body(route)["signatureScheme"] == "ed25519"
+    assert ep.signature_scheme == "ed25519"
+    assert ep.public_key == "whpk_abc"
+    assert ep.secret == ""
+
+
 def test_endpoint_test_sends_event_type_and_payload(mock_api, client):
     route = mock_api.post("/api/webhook-endpoints/ep_1/test").respond(
         200, json={"success": True},
