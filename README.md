@@ -50,7 +50,7 @@ from hookbase import Hookbase
 client = Hookbase(
     api_key="whr_...",           # Required
     base_url="https://...",      # Default: https://api.hookbase.app
-    timeout=30.0,                # Seconds (default: 30)
+    timeout=30.0,                # Seconds or httpx.Timeout (default: 30); None = no timeout
     max_retries=3,               # Default: 3
     debug=False,                 # Log requests
 )
@@ -60,9 +60,10 @@ client = Hookbase(
 
 Pass your own `httpx.Client` (or `httpx.AsyncClient` for `AsyncHookbase`) for proxies, custom
 transports or TLS settings. The SDK uses it as given and never modifies it: every request is
-sent to an absolute URL built from `base_url`, with the SDK's `Authorization` and `User-Agent`
-headers. If you pass `timeout`, it is applied to each request; if you don't, the client's own
-timeout applies. `close()` (and the context manager) leaves a client you supplied open, so close
+sent to an absolute URL built from `base_url`, with the SDK's `Authorization` (an `auth=` set on
+your client is not applied to Hookbase requests) and `User-Agent` headers. If you pass `timeout`
+(a number, an `httpx.Timeout`, or `None` for no timeout), it is applied to each request; if you
+leave it out, the client's own timeout applies. `close()` (and the context manager) leaves a client you supplied open, so close
 it yourself.
 
 ```python
@@ -313,6 +314,20 @@ source = client.sources.create({"name": "GitHub", "slug": "github", "provider": 
 # `provider` is any string (hookbase.models.KNOWN_SOURCE_PROVIDERS lists today's values), so a
 # source with a provider newer than this package still parses.
 ```
+
+## Upgrading to 4.1
+
+- `APIError.code` now carries the API's `code` from the response body (for example
+  `FEATURE_DISABLED` or `LIMIT_EXCEEDED` on a `ForbiddenError`, `DUPLICATE_NAME` on a
+  `ConflictError`) instead of a fixed string such as `"forbidden"` or `"conflict"`. The fixed
+  string is still used when the body has no `code`. Check code that compares `.code` to those
+  strings; `isinstance` checks on the error classes are unaffected.
+- `ValidationError.status_code` is the status actually returned (400 or 422); it used to be
+  always 400.
+- `APIError.details` is now populated (see [Error Handling](#error-handling)).
+- A custom `http_client` no longer needs `base_url`, auth headers or a timeout configured on it,
+  and `close()` no longer closes it.
+- `timeout=None` now means no timeout; leave `timeout` out to get the default.
 
 ## Development
 

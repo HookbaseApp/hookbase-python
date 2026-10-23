@@ -3,15 +3,25 @@ from __future__ import annotations
 import logging
 import random
 import time
-from typing import Any
+from typing import Any, Union
 
 import httpx
 
-from ._constants import DEFAULT_BASE_URL, DEFAULT_MAX_RETRIES, DEFAULT_TIMEOUT, RETRY_STATUS_CODES
+from ._constants import (
+    DEFAULT_BASE_URL,
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_TIMEOUT,
+    NOT_GIVEN,
+    RETRY_STATUS_CODES,
+    NotGiven,
+)
 from ._version import __version__
 from .errors import APIError, NetworkError, RateLimitError, TimeoutError
 
 logger = logging.getLogger("hookbase")
+
+#: `timeout` as callers may pass it; NOT_GIVEN means "use the default".
+TimeoutArg = Union[float, httpx.Timeout, None, NotGiven]
 
 
 def _parse_error(status_code: int, body: Any, request_id: str | None) -> APIError:
@@ -83,18 +93,19 @@ class _BaseTransport:
         self,
         api_key: str,
         base_url: str,
-        timeout: float | None,
+        timeout: TimeoutArg,
         max_retries: int,
         debug: bool,
         custom_client: bool,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
-        # With a caller-supplied client and no explicit `timeout`, the client's own timeout
-        # applies; otherwise the SDK's timeout is sent on every request.
-        if timeout is None and not custom_client:
+        # An explicit `timeout` (including None, meaning no timeout, as in httpx) is sent on
+        # every request. Left out, an SDK-owned client gets DEFAULT_TIMEOUT and a
+        # caller-supplied client keeps its own timeout (nothing is sent).
+        if isinstance(timeout, NotGiven) and not custom_client:
             timeout = DEFAULT_TIMEOUT
-        self._timeout = timeout
+        self._timeout: TimeoutArg = timeout
         self._max_retries = max_retries
         self._debug = debug
         self._headers = _build_headers(api_key)
@@ -107,9 +118,11 @@ class _BaseTransport:
             url = httpx.URL(raw)
         except httpx.InvalidURL as exc:
             raise NetworkError(f"Invalid request URL {raw!r}: {exc}", cause=exc) from exc
-        if url.scheme not in ("http", "https") or not url.host:
+        # The path is appended to base_url, so a query or fragment there would swallow it.
+        if url.scheme not in ("http", "https") or not url.host or url.query or url.fragment:
             invalid = httpx.InvalidURL(
-                f"base_url must be an absolute http(s) URL, got {self._base_url!r}"
+                "base_url must be an absolute http(s) URL with no query or fragment, "
+                f"got {self._base_url!r}"
             )
             raise NetworkError(str(invalid), cause=invalid) from invalid
         return url
@@ -127,16 +140,19 @@ class _BaseTransport:
             "json": json,
             "params": _clean_params(params),
             "headers": headers,
+            # The SDK's Bearer header must win over any `auth=` set on a supplied client.
+            "auth": None,
         }
-        if self._timeout is not None:
+        if not isinstance(self._timeout, NotGiven):
             kwargs["timeout"] = self._timeout
         return kwargs
 
     def _timeout_error(self, exc: httpx.TimeoutException) -> TimeoutError:
-        if self._timeout is not None:
-            message = f"Request timed out after {self._timeout}s"
+        t = self._timeout
+        if isinstance(t, (int, float)) and not isinstance(t, bool):
+            message = f"Request timed out after {t}s"
         else:
-            # The caller's http_client timeout was in effect, not one the SDK set.
+            # A supplied client's own timeout, or an httpx.Timeout: no single number to name.
             message = "Request timed out"
         err = TimeoutError(message)
         err.__cause__ = exc
@@ -169,7 +185,7 @@ class SyncTransport(_BaseTransport):
         self,
         api_key: str,
         base_url: str = DEFAULT_BASE_URL,
-        timeout: float | None = None,
+        timeout: TimeoutArg = NOT_GIVEN,
         max_retries: int = DEFAULT_MAX_RETRIES,
         debug: bool = False,
         http_client: httpx.Client | None = None,
@@ -255,7 +271,7 @@ class AsyncTransport(_BaseTransport):
         self,
         api_key: str,
         base_url: str = DEFAULT_BASE_URL,
-        timeout: float | None = None,
+        timeout: TimeoutArg = NOT_GIVEN,
         max_retries: int = DEFAULT_MAX_RETRIES,
         debug: bool = False,
         http_client: httpx.AsyncClient | None = None,

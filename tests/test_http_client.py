@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from hookbase import (
+    NOT_GIVEN,
     AsyncHookbase,
     ForbiddenError,
     Hookbase,
@@ -97,7 +98,7 @@ def test_sync_custom_client_keeps_its_timeout_when_none_given():
     assert _timeout_of(rec.requests[0])["read"] == 7.0
 
 
-def test_sync_owned_client_uses_default_timeout(monkeypatch):
+def test_sync_owned_client_uses_default_timeout():
     rec = Recorder()
     client = Hookbase(api_key=API_KEY)
     client._transport._client = httpx.Client(transport=httpx.MockTransport(rec))
@@ -178,6 +179,82 @@ def test_sync_timeout_message_names_sdk_timeout_only_when_it_applied():
     with pytest.raises(TimeoutError) as sdk:
         Hookbase(api_key=API_KEY, http_client=http, max_retries=0, timeout=5.0).sources.list()
     assert str(sdk.value) == "Request timed out after 5.0s"
+
+
+def _owned(rec: Recorder, **kwargs: Any) -> Hookbase:
+    client = Hookbase(api_key=API_KEY, **kwargs)
+    client._transport._client.close()
+    client._transport._client = httpx.Client(transport=httpx.MockTransport(rec))
+    return client
+
+
+def test_sync_owned_client_explicit_none_timeout_disables_it():
+    rec = Recorder()
+    _owned(rec, timeout=None).sources.list()
+    assert _timeout_of(rec.requests[0]) == {
+        "connect": None, "read": None, "write": None, "pool": None
+    }
+
+
+def test_sync_not_given_is_the_default():
+    rec = Recorder()
+    _owned(rec, timeout=NOT_GIVEN).sources.list()
+    assert _timeout_of(rec.requests[0])["read"] == 30.0
+
+
+def test_sync_httpx_timeout_object_is_sent():
+    rec = Recorder()
+    _owned(rec, timeout=httpx.Timeout(4.0, connect=1.0)).sources.list()
+    assert _timeout_of(rec.requests[0])["read"] == 4.0
+    assert _timeout_of(rec.requests[0])["connect"] == 1.0
+
+
+def test_sync_custom_client_explicit_none_timeout_disables_it():
+    rec = Recorder()
+    http = httpx.Client(transport=httpx.MockTransport(rec), timeout=7.0)
+    Hookbase(api_key=API_KEY, http_client=http, timeout=None).sources.list()
+    assert _timeout_of(rec.requests[0])["read"] is None
+
+
+def test_sync_custom_client_auth_does_not_override_sdk_bearer():
+    rec = Recorder()
+    http = httpx.Client(transport=httpx.MockTransport(rec), auth=httpx.BasicAuth("u", "p"))
+    Hookbase(api_key=API_KEY, http_client=http).sources.list()
+    assert rec.requests[0].headers["authorization"] == f"Bearer {API_KEY}"
+    assert http.auth is not None  # the supplied client is left as it was
+
+
+def test_sync_base_url_path_prefix_is_kept():
+    rec = Recorder()
+    http = httpx.Client(transport=httpx.MockTransport(rec))
+    client = Hookbase(
+        api_key=API_KEY, base_url="https://gw.example.test/hookbase/", http_client=http
+    )
+    client.sources.list()
+    assert str(rec.requests[0].url).startswith("https://gw.example.test/hookbase/api/sources")
+
+
+@pytest.mark.parametrize(
+    "base_url", ["https://api.hookbase.app?x=1", "https://api.hookbase.app/#frag"]
+)
+def test_sync_base_url_with_query_or_fragment_is_rejected(base_url):
+    rec = Recorder()
+    http = httpx.Client(transport=httpx.MockTransport(rec))
+    with pytest.raises(NetworkError) as exc_info:
+        Hookbase(api_key=API_KEY, base_url=base_url, http_client=http).sources.list()
+    assert isinstance(exc_info.value.cause, httpx.InvalidURL)
+    assert rec.requests == []
+
+
+def test_timeout_message_omits_seconds_for_httpx_timeout():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow", request=request)
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    client = Hookbase(api_key=API_KEY, http_client=http, max_retries=0, timeout=httpx.Timeout(2.0))
+    with pytest.raises(TimeoutError) as exc_info:
+        client.sources.list()
+    assert str(exc_info.value) == "Request timed out"
 
 
 # --------------------------------------------------------------------------- async

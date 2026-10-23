@@ -6,7 +6,9 @@ from typing import Any
 _ENVELOPE_KEYS = frozenset({"error", "code", "message", "details"})
 
 
-def _body_details(container: dict[str, Any]) -> dict[str, Any] | None:
+def _body_details(
+    container: dict[str, Any], exclude: tuple[str, ...] = ()
+) -> dict[str, Any] | None:
     """The structured detail an error body carries, or None.
 
     The API sends ``details`` beside ``error`` (Zod's ``{ fieldErrors, formErrors }`` for
@@ -16,7 +18,9 @@ def _body_details(container: dict[str, Any]) -> dict[str, Any] | None:
     details = container.get("details")
     if isinstance(details, dict):
         return details
-    extras = {k: v for k, v in container.items() if k not in _ENVELOPE_KEYS}
+    extras = {
+        k: v for k, v in container.items() if k not in _ENVELOPE_KEYS and k not in exclude
+    }
     if details is not None:
         extras["details"] = details
     return extras or None
@@ -75,6 +79,11 @@ class APIError(HookbaseError):
             # The real API sends `error` as a plain string, with `code` and `details` as
             # siblings of `error` at the top level of the body, never nested inside it.
             message = error
+            # A body may carry a longer `message` beside `error` (e.g. the dev-mode 500);
+            # keep it rather than dropping it.
+            extra_message = body.get("message")
+            if isinstance(extra_message, str) and extra_message and extra_message != error:
+                message = f"{error}: {extra_message}"
             code = body.get("code")
             details = _body_details(body)
             raw = body.get("details")
@@ -83,7 +92,7 @@ class APIError(HookbaseError):
         elif isinstance(error, dict) and error is not body:
             message = error.get("message") or body.get("message") or f"API error: {status_code}"
             code = error.get("code") or body.get("code")
-            details = _body_details(error)
+            details = _body_details(error, exclude=("validationErrors",))
             validation_errors = error.get("validationErrors")
             if validation_errors is None and isinstance(error.get("details"), dict):
                 validation_errors = error["details"].get("fieldErrors")
@@ -120,6 +129,10 @@ class APIError(HookbaseError):
             return ConflictError(**common)
         if status_code == 429:
             return RateLimitError(**common)
+        # A subclass that keeps APIError's constructor gets itself back (e.g. a caller's own
+        # subclass); one with a different signature (ForbiddenError, ...) gets a plain APIError.
+        if cls.__init__ is APIError.__init__:
+            return cls(status_code=status_code, **common)
         return APIError(status_code=status_code, **common)
 
 

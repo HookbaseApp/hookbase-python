@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 
 from ._client import AsyncTransport, SyncTransport
-from ._constants import DEFAULT_BASE_URL, DEFAULT_MAX_RETRIES
+from ._constants import DEFAULT_BASE_URL, DEFAULT_MAX_RETRIES, NOT_GIVEN, NotGiven
 from .resources import (
     DLQ,
     Analytics,
@@ -98,8 +98,9 @@ class Hookbase:
     Args:
         api_key: Your Hookbase API key (e.g. ``whr_...``).
         base_url: API base URL (default: ``https://api.hookbase.app``).
-        timeout: Request timeout in seconds (default: 30). With a custom ``http_client``
-            and no ``timeout``, the client's own timeout applies.
+        timeout: Request timeout in seconds or an ``httpx.Timeout`` (default: 30). ``None``
+            disables the timeout, as in httpx. With a custom ``http_client`` and no
+            ``timeout`` argument, the client's own timeout applies.
         max_retries: Max retry attempts for transient failures (default: 3).
         debug: Enable debug logging of requests.
         http_client: Optional custom ``httpx.Client`` (proxies, transports, TLS settings).
@@ -142,7 +143,7 @@ class Hookbase:
         api_key: str,
         *,
         base_url: str = DEFAULT_BASE_URL,
-        timeout: float | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = NOT_GIVEN,
         max_retries: int = DEFAULT_MAX_RETRIES,
         debug: bool = False,
         http_client: httpx.Client | None = None,
@@ -197,8 +198,9 @@ class AsyncHookbase:
     Args:
         api_key: Your Hookbase API key (e.g. ``whr_...``).
         base_url: API base URL (default: ``https://api.hookbase.app``).
-        timeout: Request timeout in seconds (default: 30). With a custom ``http_client``
-            and no ``timeout``, the client's own timeout applies.
+        timeout: Request timeout in seconds or an ``httpx.Timeout`` (default: 30). ``None``
+            disables the timeout, as in httpx. With a custom ``http_client`` and no
+            ``timeout`` argument, the client's own timeout applies.
         max_retries: Max retry attempts for transient failures (default: 3).
         debug: Enable debug logging of requests.
         http_client: Optional custom ``httpx.AsyncClient`` (proxies, transports, TLS settings).
@@ -241,7 +243,7 @@ class AsyncHookbase:
         api_key: str,
         *,
         base_url: str = DEFAULT_BASE_URL,
-        timeout: float | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = NOT_GIVEN,
         max_retries: int = DEFAULT_MAX_RETRIES,
         debug: bool = False,
         http_client: httpx.AsyncClient | None = None,

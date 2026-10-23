@@ -231,3 +231,31 @@ def test_rate_limit_body_code_and_header_retry_after(mock_api, client):
         client.sources.get("src_1")
     assert exc_info.value.code == "RATE_LIMITED"
     assert exc_info.value.retry_after == 2.0
+
+
+def test_string_error_keeps_sibling_message():
+    err = APIError.from_response(
+        500, {"error": "Internal server error", "message": "relation x does not exist"}
+    )
+    assert str(err) == "Internal server error: relation x does not exist"
+    assert err.details is None
+
+
+def test_nested_validation_errors_not_duplicated_into_details():
+    err = APIError.from_response(
+        422,
+        {"error": {"message": "Bad", "validationErrors": {"name": ["required"]}}},
+    )
+    assert isinstance(err, ValidationError)
+    assert err.validation_errors == {"name": ["required"]}
+    assert err.details is None
+
+
+def test_from_response_returns_cls_for_compatible_subclass():
+    class MyError(APIError):
+        pass
+
+    err = MyError.from_response(500, {"error": "boom", "code": "x"})
+    assert type(err) is MyError
+    assert err.code == "x"
+    assert type(ForbiddenError.from_response(500, {"error": "boom"})) is APIError

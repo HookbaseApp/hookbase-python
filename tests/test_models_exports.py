@@ -10,7 +10,7 @@ import hookbase.models as models
 
 def _public_definitions(module):
     """Classes defined in the module, plus its top-level aliases and constants."""
-    with open(module.__file__) as fh:
+    with open(module.__file__, encoding="utf-8") as fh:
         source = fh.read()
     for name, obj in list(vars(module).items()):
         if name.startswith("_") or name[0].islower():
