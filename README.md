@@ -81,7 +81,7 @@ http.close()
 
 ```python
 # Sources
-client.sources.list(search="github", provider="github")
+client.sources.list(page_size=50)  # the API has no search/provider filter on this list
 client.sources.create({"name": "GitHub", "slug": "github", "provider": "github"})
 client.sources.get("src_id")
 client.sources.update("src_id", {"name": "Updated"})
@@ -126,10 +126,14 @@ client.deliveries.bulk_replay(["del_1", "del_2"])
 # Transforms & Filters
 client.transforms.create({"name": "Extract", "transformType": "jsonata", "code": "$.data"})
 client.transforms.test(code="$.data", payload={"data": {"key": "value"}})  # .result
-client.filters.test([{"field": "$.type", "operator": "eq", "value": "order"}], payload={...})
+client.filters.test(
+    [{"field": "type", "operator": "equals", "value": "order"}],  # dot paths: "data.status"
+    payload={"type": "order"},
+    logic="AND",  # or "OR"; sent uppercase
+)
 
 # Schemas
-client.schemas.create({"name": "OrderSchema", "jsonSchema": {"type": "object", ...}})
+client.schemas.create({"name": "OrderSchema", "jsonSchema": {"type": "object", "required": ["orderId"]}})
 ```
 
 ### Outbound Webhooks
@@ -153,7 +157,7 @@ client.outbound.subscriptions.create({"endpointId": "ep_id", "eventTypeId": "et_
 client.outbound.subscriptions.bulk_create("ep_id", ["et_1", "et_2"])
 
 # Send Events
-client.outbound.messages.send("app_id", event_type="order.created", payload={...})
+client.outbound.messages.send("app_id", event_type="order.created", payload={"orderId": "ord_1"})
 
 # Message Log
 client.outbound.message_log.list(application_id="app_id")
@@ -170,20 +174,30 @@ client.outbound.dlq.retry_bulk(["dlq_1", "dlq_2"])
 ### Admin
 
 ```python
-# Organizations
+# Organizations and creating API keys need a user session: with a whr_ API key the
+# API answers 403 (ForbiddenError).
 client.organizations.list()
 client.organizations.list_members("org_id")
 client.organizations.invite("org_id", "user@example.com", "member")
-
-# API Keys
 client.api_keys.create({"name": "CI Key", "scopes": ["read", "write"]})
 
-# Analytics
-client.analytics.dashboard(range="30d")
+# Analytics: range 1h, 24h, 7d or 30d (or "custom" with start_date/end_date)
+stats = client.analytics.dashboard(range="30d", tz="America/New_York")
+stats.overview.total_events, stats.latency.percentiles.p95, stats.errors.by_status_code
 
-# Cron Jobs & Tunnels
+# Schemas
+client.schemas.validate("sch_id", {"orderId": "ord_1"})  # .valid, .errors[].path/.message
+
+# Cron jobs
 client.cron_jobs.list()
-client.tunnels.list()
+client.cron_jobs.trigger("cron_id")  # .status, .response_status, .error
+client.cron_jobs.list_executions("cron_id", limit=10)
+
+# Tunnels: the auth token is returned once, on create
+tunnel = client.tunnels.create({"name": "dev"})
+tunnel.auth_token, tunnel.tunnel_url, tunnel.ws_url
+client.tunnels.regenerate_token(tunnel.id)  # new token; old connections are dropped
+client.tunnels.delete(tunnel.id)
 ```
 
 ### Pagination
@@ -201,9 +215,12 @@ for source in page.auto_paging_iter():
 while page.has_more:
     page = page.next_page()
 
+# Schemas and cron jobs are not paginated by the API: one page holding everything
+schemas = client.schemas.list()
+
 # Cursor-based (inbound events, applications, endpoints, subscriptions, etc.)
-page = client.outbound.applications.list(limit=50)
-for app in page.auto_paging_iter():
+apps = client.outbound.applications.list(limit=50)
+for app in apps.auto_paging_iter():
     print(app.name)
 for event in client.events.list(limit=100).auto_paging_iter():
     print(event.id)
@@ -242,6 +259,7 @@ from hookbase.models import CreateEndpointParams
 ep = client.outbound.endpoints.create(
     "app_id", CreateEndpointParams(url="https://example.com/hook", signature_scheme="ed25519")
 )
+assert ep.public_key is not None  # set for Ed25519 endpoints
 wh = Webhook(ep.public_key)  # "whpk_..."; same verify() API, tolerance and errors as v1
 payload = wh.verify(request_body, request_headers)
 
@@ -297,6 +315,18 @@ Every `APIError` carries:
 `TimeoutError` and `NetworkError` (connection failures, and a `base_url` that is not an
 absolute http(s) URL) are raised for requests that got no response.
 
+### Retries
+
+Up to `max_retries` retries (default 3):
+
+- **429** is retried for every method after `Retry-After` (seconds or an HTTP date; 60 s
+  when the header is missing or unusable).
+- **Any 5xx, read timeouts and dropped connections** are retried with exponential backoff
+  (1, 2, 4 ... s, capped at 10 s, plus up to 1 s jitter) for every method except POST. A POST
+  is retried only when it carries an idempotency key (`outbound.messages.send` always does).
+- **A connection that was never made** is always retried.
+- **Other 4xx** responses are never retried.
+
 ### Pydantic Models
 
 All responses are typed Pydantic models with camelCase alias support:
@@ -328,6 +358,20 @@ source = client.sources.create({"name": "GitHub", "slug": "github", "provider": 
 - A custom `http_client` no longer needs `base_url`, auth headers or a timeout configured on it,
   and `close()` no longer closes it.
 - `timeout=None` now means no timeout; leave `timeout` out to get the default.
+- Every 5xx (not only 500/502/503/504) is retried for retry-safe requests, and `Retry-After`
+  may be an HTTP date. An empty 2xx body returns `None`; a 2xx body that is not valid JSON
+  raises `APIError` (`code="invalid_response"`).
+- `Webhook("whsec_...")` raises `ValueError` for a secret that is not valid base64, at
+  construction rather than on the first `verify()`.
+- `analytics.dashboard()` returns the API's real shape (`overview`, `latency`, `errors`, ...).
+  The old top-level fields (`events_received`, `delivery_success_rate`, ...) are now
+  read-only properties derived from `overview`; before, they were always 0.
+- `sources.list(search=, provider=, is_active=)`, `destinations.list(search=, is_active=)` and
+  `routes.list(source_id=, destination_id=, is_active=)` warn (`DeprecationWarning`) and do
+  not send those filters, which the API never applied.
+- `transforms.update()` and `organizations.update()` make a second request to return the
+  stored object (they used to raise on the API's `{"success": true}` reply).
+- `SchemaValidationResult.errors` is a list of `SchemaValidationError` (`path`, `message`).
 
 ## Development
 
