@@ -16,7 +16,7 @@ from ..models.routes import (
     Route,
     UpdateRouteParams,
 )
-from ._base import AsyncResource, SyncResource, _to_body
+from ._base import AsyncResource, SyncResource, _to_body, _warn_ignored
 
 
 class Routes(SyncResource):
@@ -29,10 +29,11 @@ class Routes(SyncResource):
         destination_id: str | None = None,
         is_active: bool | None = None,
     ) -> SyncOffsetPage[Route]:
-        params = self._clean_params({
-            "page": page, "pageSize": page_size,
-            "sourceId": source_id, "destinationId": destination_id, "isActive": is_active,
-        })
+        _warn_ignored(
+            "routes.list()", source_id=source_id, destination_id=destination_id,
+            is_active=is_active,
+        )
+        params = self._clean_params({"page": page, "pageSize": page_size})
         return _fetch_offset_page(
             self._transport, "/api/routes", params, Route,
             data_key="routes",
@@ -108,10 +109,11 @@ class AsyncRoutes(AsyncResource):
         destination_id: str | None = None,
         is_active: bool | None = None,
     ) -> AsyncOffsetPage[Route]:
-        params = self._clean_params({
-            "page": page, "pageSize": page_size,
-            "sourceId": source_id, "destinationId": destination_id, "isActive": is_active,
-        })
+        _warn_ignored(
+            "routes.list()", source_id=source_id, destination_id=destination_id,
+            is_active=is_active,
+        )
+        params = self._clean_params({"page": page, "pageSize": page_size})
         return await _async_fetch_offset_page(
             self._transport, "/api/routes", params, Route,
             data_key="routes",

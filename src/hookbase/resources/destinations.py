@@ -17,7 +17,7 @@ from ..models.destinations import (
     create_destination_body,
     update_destination_body,
 )
-from ._base import AsyncResource, SyncResource
+from ._base import AsyncResource, SyncResource, _warn_ignored
 
 
 class Destinations(SyncResource):
@@ -29,10 +29,8 @@ class Destinations(SyncResource):
         search: str | None = None,
         is_active: bool | None = None,
     ) -> SyncOffsetPage[Destination]:
-        params = self._clean_params({
-            "page": page, "pageSize": page_size,
-            "search": search, "isActive": is_active,
-        })
+        _warn_ignored("destinations.list()", search=search, is_active=is_active)
+        params = self._clean_params({"page": page, "pageSize": page_size})
         return _fetch_offset_page(
             self._transport, "/api/destinations", params, Destination, data_key="destinations"
         )
@@ -89,10 +87,8 @@ class AsyncDestinations(AsyncResource):
         search: str | None = None,
         is_active: bool | None = None,
     ) -> AsyncOffsetPage[Destination]:
-        params = self._clean_params({
-            "page": page, "pageSize": page_size,
-            "search": search, "isActive": is_active,
-        })
+        _warn_ignored("destinations.list()", search=search, is_active=is_active)
+        params = self._clean_params({"page": page, "pageSize": page_size})
         return await _async_fetch_offset_page(
             self._transport, "/api/destinations", params, Destination, data_key="destinations"
         )

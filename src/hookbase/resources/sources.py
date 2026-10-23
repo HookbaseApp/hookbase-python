@@ -17,7 +17,7 @@ from ..models.sources import (
     UpdateSourceParams,
     update_source_body,
 )
-from ._base import AsyncResource, SyncResource, _to_body
+from ._base import AsyncResource, SyncResource, _to_body, _warn_ignored
 
 
 class Sources(SyncResource):
@@ -30,10 +30,10 @@ class Sources(SyncResource):
         provider: str | None = None,
         is_active: bool | None = None,
     ) -> SyncOffsetPage[Source]:
-        params = self._clean_params({
-            "page": page, "pageSize": page_size,
-            "search": search, "provider": provider, "isActive": is_active,
-        })
+        _warn_ignored(
+            "sources.list()", search=search, provider=provider, is_active=is_active,
+        )
+        params = self._clean_params({"page": page, "pageSize": page_size})
         return _fetch_offset_page(
             self._transport, "/api/sources", params, Source,
             data_key="sources",
@@ -135,10 +135,10 @@ class AsyncSources(AsyncResource):
         provider: str | None = None,
         is_active: bool | None = None,
     ) -> AsyncOffsetPage[Source]:
-        params = self._clean_params({
-            "page": page, "pageSize": page_size,
-            "search": search, "provider": provider, "isActive": is_active,
-        })
+        _warn_ignored(
+            "sources.list()", search=search, provider=provider, is_active=is_active,
+        )
+        params = self._clean_params({"page": page, "pageSize": page_size})
         return await _async_fetch_offset_page(
             self._transport, "/api/sources", params, Source,
             data_key="sources",

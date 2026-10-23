@@ -18,6 +18,14 @@ from ..models.filters import (
 from ._base import AsyncResource, SyncResource, _to_body
 
 
+def _upper_logic(body: Any) -> Any:
+    """The API accepts only "AND"/"OR". A lowercase "and" is a 400 on create, is stored as-is
+    on update, and makes ``test`` silently evaluate OR, so send it uppercase."""
+    if isinstance(body, dict) and isinstance(body.get("logic"), str):
+        body = {**body, "logic": body["logic"].upper()}
+    return body
+
+
 class Filters(SyncResource):
     def list(
         self,
@@ -36,12 +44,12 @@ class Filters(SyncResource):
         return self._parse(Filter, resp.get("filter", resp))
 
     def create(self, params: CreateFilterParams | dict[str, Any]) -> Filter:
-        body = _to_body(params)
+        body = _upper_logic(_to_body(params))
         resp = self._request("POST", "/api/filters", json=body)
         return self._parse(Filter, resp.get("filter", resp))
 
     def update(self, id: str, params: UpdateFilterParams | dict[str, Any]) -> None:
-        body = _to_body(params)
+        body = _upper_logic(_to_body(params))
         self._request("PATCH", f"/api/filters/{id}", json=body)
 
     def delete(self, id: str) -> None:
@@ -60,7 +68,7 @@ class Filters(SyncResource):
         ]
         body: dict[str, Any] = {"conditions": conds, "payload": payload}
         if logic is not None:
-            body["logic"] = logic
+            body["logic"] = logic.upper()
         resp = self._request("POST", "/api/filters/test", json=body)
         return self._parse(FilterTestResult, resp)
 
@@ -83,12 +91,12 @@ class AsyncFilters(AsyncResource):
         return self._parse(Filter, resp.get("filter", resp))
 
     async def create(self, params: CreateFilterParams | dict[str, Any]) -> Filter:
-        body = _to_body(params)
+        body = _upper_logic(_to_body(params))
         resp = await self._request("POST", "/api/filters", json=body)
         return self._parse(Filter, resp.get("filter", resp))
 
     async def update(self, id: str, params: UpdateFilterParams | dict[str, Any]) -> None:
-        body = _to_body(params)
+        body = _upper_logic(_to_body(params))
         await self._request("PATCH", f"/api/filters/{id}", json=body)
 
     async def delete(self, id: str) -> None:
@@ -107,6 +115,6 @@ class AsyncFilters(AsyncResource):
         ]
         body: dict[str, Any] = {"conditions": conds, "payload": payload}
         if logic is not None:
-            body["logic"] = logic
+            body["logic"] = logic.upper()
         resp = await self._request("POST", "/api/filters/test", json=body)
         return self._parse(FilterTestResult, resp)
