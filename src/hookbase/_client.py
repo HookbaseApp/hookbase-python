@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+import math
 import random
 import time
+from email.utils import parsedate_to_datetime
 from typing import Any, Union
 
 import httpx
@@ -10,9 +12,9 @@ import httpx
 from ._constants import (
     DEFAULT_BASE_URL,
     DEFAULT_MAX_RETRIES,
+    DEFAULT_RETRY_AFTER,
     DEFAULT_TIMEOUT,
     NOT_GIVEN,
-    RETRY_STATUS_CODES,
     NotGiven,
 )
 from ._version import __version__
@@ -37,7 +39,34 @@ def _build_headers(api_key: str) -> dict[str, str]:
 
 
 def _should_retry(status_code: int) -> bool:
-    return status_code in RETRY_STATUS_CODES
+    """429 and every 5xx (including Cloudflare's 52x) are worth another attempt."""
+    return status_code == 429 or status_code >= 500
+
+
+def _parse_retry_after(header: str | None, now: float | None = None) -> float:
+    """Seconds to wait from a ``Retry-After`` header: delta-seconds or an HTTP-date.
+
+    A missing or unusable value gives DEFAULT_RETRY_AFTER; a negative delay or a date in the
+    past gives 0.
+    """
+    if header is None:
+        return DEFAULT_RETRY_AFTER
+    value = header.strip()
+    if not value:
+        return DEFAULT_RETRY_AFTER
+    try:
+        seconds = float(value)
+    except ValueError:
+        try:
+            when = parsedate_to_datetime(value)
+        except (TypeError, ValueError, IndexError):
+            return DEFAULT_RETRY_AFTER
+        if when is None or when.tzinfo is None:  # pragma: no cover - not an RFC 9110 date
+            return DEFAULT_RETRY_AFTER
+        seconds = when.timestamp() - (time.time() if now is None else now)
+    if not math.isfinite(seconds):
+        return DEFAULT_RETRY_AFTER
+    return max(0.0, seconds)
 
 
 # A POST creates something or triggers work, so repeating one that may already have reached the
@@ -58,11 +87,25 @@ def _never_sent(exc: Exception) -> bool:
 
 
 def _decode_body(resp: httpx.Response) -> Any:
-    """JSON for JSON responses; the text for anything else (e.g. a CSV export)."""
+    """JSON for JSON responses; the text for anything else (e.g. a CSV export).
+
+    An empty body is None. A JSON response that does not parse raises APIError rather than
+    leaking a ``json.JSONDecodeError`` past the SDK's error types.
+    """
     content_type = resp.headers.get("content-type", "")
     if content_type and "json" not in content_type.lower():
         return resp.text
-    return resp.json()
+    if not resp.content.strip():
+        return None
+    try:
+        return resp.json()
+    except ValueError as exc:
+        raise APIError(
+            f"Invalid JSON in {resp.status_code} response: {exc}",
+            resp.status_code,
+            code="invalid_response",
+            request_id=resp.headers.get("x-request-id"),
+        ) from exc
 
 
 def _backoff(attempt: int) -> float:
@@ -165,12 +208,7 @@ class _BaseTransport:
             body = {}
         error = _parse_error(resp.status_code, body, resp.headers.get("x-request-id"))
         if isinstance(error, RateLimitError):
-            retry_after_header = resp.headers.get("retry-after")
-            if retry_after_header:
-                try:
-                    error.retry_after = float(retry_after_header)
-                except ValueError:
-                    pass
+            error.retry_after = _parse_retry_after(resp.headers.get("retry-after"))
         return error
 
     def _log(self, method: str, path: str, params: Any) -> None:

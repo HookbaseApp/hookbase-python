@@ -3,7 +3,8 @@ from __future__ import annotations
 DEFAULT_BASE_URL = "https://api.hookbase.app"
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_RETRIES = 3
-RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
+#: Seconds to wait before retrying a 429 that has no usable ``Retry-After`` header.
+DEFAULT_RETRY_AFTER = 60.0
 
 
 class NotGiven:

@@ -29,6 +29,7 @@ class SyncOffsetPage(Generic[T]):
         path: str,
         params: dict[str, Any],
         model: type[T],
+        data_key: str | None = None,
     ) -> None:
         self.data = data
         self.total = total
@@ -38,6 +39,7 @@ class SyncOffsetPage(Generic[T]):
         self._path = path
         self._params = params
         self._model = model
+        self._data_key = data_key
 
     @property
     def has_more(self) -> bool:
@@ -49,6 +51,7 @@ class SyncOffsetPage(Generic[T]):
             self._path,
             {**self._params, "page": self.page + 1},
             self._model,
+            data_key=self._data_key,
         )
 
     def auto_paging_iter(self) -> Iterator[T]:
@@ -85,6 +88,7 @@ class AsyncOffsetPage(Generic[T]):
         path: str,
         params: dict[str, Any],
         model: type[T],
+        data_key: str | None = None,
     ) -> None:
         self.data = data
         self.total = total
@@ -94,6 +98,7 @@ class AsyncOffsetPage(Generic[T]):
         self._path = path
         self._params = params
         self._model = model
+        self._data_key = data_key
 
     @property
     def has_more(self) -> bool:
@@ -105,6 +110,7 @@ class AsyncOffsetPage(Generic[T]):
             self._path,
             {**self._params, "page": self.page + 1},
             self._model,
+            data_key=self._data_key,
         )
 
     async def auto_paging_iter(self) -> AsyncIterator[T]:
@@ -377,6 +383,7 @@ def _fetch_offset_page(
         path=path,
         params=params,
         model=model,
+        data_key=data_key,
     )
 
 
@@ -399,6 +406,7 @@ async def _async_fetch_offset_page(
         path=path,
         params=params,
         model=model,
+        data_key=data_key,
     )
 
 
