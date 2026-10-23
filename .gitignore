@@ -11,3 +11,6 @@ build/
 *.so
 .venv/
 venv/
+.coverage
+.coverage.*
+htmlcov/
