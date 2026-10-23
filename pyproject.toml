@@ -49,8 +49,8 @@ dev = [
 [project.urls]
 Homepage = "https://hookbase.app"
 Documentation = "https://www.hookbase.app/docs/send/sdk"
-Repository = "https://github.com/hookbase/hookbase-python"
-Issues = "https://github.com/hookbase/hookbase-python/issues"
+Repository = "https://github.com/HookbaseApp/hookbase-python"
+Issues = "https://github.com/HookbaseApp/hookbase-python/issues"
 
 [tool.hatch.version]
 path = "src/hookbase/_version.py"

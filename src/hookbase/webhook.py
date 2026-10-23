@@ -151,7 +151,7 @@ class Webhook:
         Args:
             payload: The payload string to sign.
             webhook_id: Optional webhook ID (generated if not provided).
-            timestamp: Optional Unix timestamp (current time if not provided).
+            timestamp: Optional Unix timestamp (current time when None; 0 is used as given).
 
         Returns:
             Dict with ``webhook-id``, ``webhook-timestamp``, ``webhook-signature``.
@@ -168,7 +168,7 @@ class Webhook:
                 "use the matching secret key (whsk_)"
             )
         wh_id = webhook_id or f"msg_{secrets.token_urlsafe(18)}"
-        ts = str(timestamp or math.floor(time.time()))
+        ts = str(math.floor(time.time()) if timestamp is None else timestamp)
         signed_content = f"{wh_id}.{ts}.{payload}"
         if self._ed25519_private is not None:
             raw_sig = self._ed25519_private.sign(signed_content.encode("utf-8"))

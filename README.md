@@ -56,6 +56,26 @@ client = Hookbase(
 )
 ```
 
+#### Custom `httpx` client
+
+Pass your own `httpx.Client` (or `httpx.AsyncClient` for `AsyncHookbase`) for proxies, custom
+transports or TLS settings. The SDK uses it as given and never modifies it: every request is
+sent to an absolute URL built from `base_url`, with the SDK's `Authorization` and `User-Agent`
+headers. If you pass `timeout`, it is applied to each request; if you don't, the client's own
+timeout applies. `close()` (and the context manager) leaves a client you supplied open, so close
+it yourself.
+
+```python
+import httpx
+from hookbase import Hookbase
+
+http = httpx.Client(verify="/etc/ssl/corp-ca.pem", timeout=10.0)
+client = Hookbase(api_key="whr_...", http_client=http)  # uses the 10s client timeout
+...
+client.close()
+http.close()
+```
+
 ### Inbound Webhooks
 
 ```python
@@ -260,6 +280,21 @@ except RateLimitError as e:
 except APIError as e:
     print(f"{e.status_code}: {e} (request_id={e.request_id})")
 ```
+
+Every `APIError` carries:
+
+- `status_code`: the HTTP status actually returned (a `ValidationError` is 400 or 422).
+- `code`: the `code` from the response body, e.g. `LIMIT_EXCEEDED` or `FEATURE_DISABLED` on a
+  `ForbiddenError`. When the body has no `code`, it is the class default (`forbidden`,
+  `not_found`, `validation_error`, ...).
+- `details`: the body's `details` object (for validation failures, `{"fieldErrors": ...,
+  "formErrors": ...}`), or any extra fields the error sent (such as `current` and `max` on
+  `LIMIT_EXCEEDED`); `None` when there are none. `ValidationError.validation_errors` is the
+  `fieldErrors` map.
+- `request_id`: the `x-request-id` response header.
+
+`TimeoutError` and `NetworkError` (connection failures, and a `base_url` that is not an
+absolute http(s) URL) are raised for requests that got no response.
 
 ### Pydantic Models
 

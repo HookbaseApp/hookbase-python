@@ -140,3 +140,94 @@ def test_error_from_response_dict_error():
     )
     assert str(err) == "Detailed error"
     assert err.code == "server_error"
+
+
+# --- code / details / status_code preserved from the body ------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("status", "cls", "default_code"),
+    [
+        (401, AuthenticationError, "authentication_error"),
+        (403, ForbiddenError, "forbidden"),
+        (404, NotFoundError, "not_found"),
+        (409, ConflictError, "conflict"),
+        (429, RateLimitError, "rate_limit_exceeded"),
+        (400, ValidationError, "validation_error"),
+    ],
+)
+def test_subclass_keeps_body_code_or_falls_back(status, cls, default_code):
+    with_code = APIError.from_response(status, {"error": "x", "code": "SOME_CODE"})
+    assert isinstance(with_code, cls)
+    assert with_code.code == "SOME_CODE"
+    assert with_code.status_code == status
+
+    without = APIError.from_response(status, {"error": "x"})
+    assert isinstance(without, cls)
+    assert without.code == default_code
+
+
+def test_forbidden_limit_exceeded_keeps_code_and_extra_fields_as_details(mock_api, client):
+    mock_api.post("/api/sources").respond(
+        403,
+        json={"error": "Source limit reached", "code": "LIMIT_EXCEEDED", "current": 3, "max": 3},
+        headers={"x-request-id": "req_9"},
+    )
+    with pytest.raises(ForbiddenError) as exc_info:
+        client.sources.create({"name": "a", "slug": "a", "provider": "generic"})
+    err = exc_info.value
+    assert err.code == "LIMIT_EXCEEDED"
+    assert err.details == {"current": 3, "max": 3}
+    assert err.request_id == "req_9"
+    assert str(err) == "Source limit reached"
+
+
+def test_validation_422_keeps_status_and_details():
+    details = {"fieldErrors": {"url": ["Invalid url"]}, "formErrors": []}
+    err = APIError.from_response(422, {"error": "Invalid input", "details": details})
+    assert isinstance(err, ValidationError)
+    assert err.status_code == 422
+    assert err.details == details
+    assert err.validation_errors == {"url": ["Invalid url"]}
+    assert err.code == "validation_error"
+
+
+def test_validation_400_status_default():
+    err = APIError.from_response(400, {"error": "Invalid ID format", "code": "invalid_id"})
+    assert err.status_code == 400
+    assert err.code == "invalid_id"
+    assert err.details is None
+
+
+def test_generic_error_details_populated():
+    err = APIError.from_response(
+        503, {"error": "Region unavailable", "code": "region_unavailable", "region": "eu"}
+    )
+    assert type(err) is APIError
+    assert err.code == "region_unavailable"
+    assert err.details == {"region": "eu"}
+
+
+def test_nested_dict_error_details():
+    err = APIError.from_response(
+        409, {"error": {"message": "Dup", "code": "DUPLICATE_NAME", "details": {"name": "a"}}}
+    )
+    assert isinstance(err, ConflictError)
+    assert err.code == "DUPLICATE_NAME"
+    assert err.details == {"name": "a"}
+
+
+def test_non_dict_body_is_tolerated():
+    err = APIError.from_response(500, ["unexpected"])
+    assert err.code == "unknown_error"
+    assert err.details is None
+
+
+def test_rate_limit_body_code_and_header_retry_after(mock_api, client):
+    mock_api.get("/api/sources/src_1").respond(
+        429, json={"error": "Slow down", "code": "RATE_LIMITED"}, headers={"retry-after": "2"}
+    )
+    with pytest.raises(RateLimitError) as exc_info:
+        client.sources.get("src_1")
+    assert exc_info.value.code == "RATE_LIMITED"
+    assert exc_info.value.retry_after == 2.0

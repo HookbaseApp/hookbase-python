@@ -386,3 +386,14 @@ def test_ed25519_invalid_keys_are_rejected_at_construction():
 
 def test_hmac_secret_reports_hmac_scheme():
     assert Webhook(SECRET_PREFIXED).signature_scheme == "hmac-sha256"
+
+
+def test_generate_test_headers_timestamp_zero_is_used(wh):
+    headers = wh.generate_test_headers("{}", timestamp=0)
+    assert headers["webhook-timestamp"] == "0"
+
+
+def test_generate_test_headers_timestamp_none_uses_now(wh):
+    before = math.floor(time.time())
+    headers = wh.generate_test_headers("{}")
+    assert before <= int(headers["webhook-timestamp"]) <= math.floor(time.time())

@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 
 from ._client import AsyncTransport, SyncTransport
-from ._constants import DEFAULT_BASE_URL, DEFAULT_MAX_RETRIES, DEFAULT_TIMEOUT
+from ._constants import DEFAULT_BASE_URL, DEFAULT_MAX_RETRIES
 from .resources import (
     DLQ,
     Analytics,
@@ -98,10 +98,14 @@ class Hookbase:
     Args:
         api_key: Your Hookbase API key (e.g. ``whr_...``).
         base_url: API base URL (default: ``https://api.hookbase.app``).
-        timeout: Request timeout in seconds (default: 30).
+        timeout: Request timeout in seconds (default: 30). With a custom ``http_client``
+            and no ``timeout``, the client's own timeout applies.
         max_retries: Max retry attempts for transient failures (default: 3).
         debug: Enable debug logging of requests.
-        http_client: Optional custom ``httpx.Client`` instance.
+        http_client: Optional custom ``httpx.Client`` (proxies, transports, TLS settings).
+            It is used as given: the SDK sends absolute URLs from ``base_url`` and its
+            ``Authorization``/``User-Agent`` headers on each request, never modifies the
+            client, and does not close it on ``close()``.
 
     Example::
 
@@ -138,7 +142,7 @@ class Hookbase:
         api_key: str,
         *,
         base_url: str = DEFAULT_BASE_URL,
-        timeout: float = DEFAULT_TIMEOUT,
+        timeout: float | None = None,
         max_retries: int = DEFAULT_MAX_RETRIES,
         debug: bool = False,
         http_client: httpx.Client | None = None,
@@ -177,7 +181,7 @@ class Hookbase:
         self.tunnels = Tunnels(self._transport)
 
     def close(self) -> None:
-        """Close the underlying HTTP client."""
+        """Close the HTTP client the SDK created (a caller-supplied ``http_client`` stays open)."""
         self._transport.close()
 
     def __enter__(self) -> Hookbase:
@@ -193,10 +197,14 @@ class AsyncHookbase:
     Args:
         api_key: Your Hookbase API key (e.g. ``whr_...``).
         base_url: API base URL (default: ``https://api.hookbase.app``).
-        timeout: Request timeout in seconds (default: 30).
+        timeout: Request timeout in seconds (default: 30). With a custom ``http_client``
+            and no ``timeout``, the client's own timeout applies.
         max_retries: Max retry attempts for transient failures (default: 3).
         debug: Enable debug logging of requests.
-        http_client: Optional custom ``httpx.AsyncClient`` instance.
+        http_client: Optional custom ``httpx.AsyncClient`` (proxies, transports, TLS settings).
+            It is used as given: the SDK sends absolute URLs from ``base_url`` and its
+            ``Authorization``/``User-Agent`` headers on each request, never modifies the
+            client, and does not close it on ``close()``.
 
     Example::
 
@@ -233,7 +241,7 @@ class AsyncHookbase:
         api_key: str,
         *,
         base_url: str = DEFAULT_BASE_URL,
-        timeout: float = DEFAULT_TIMEOUT,
+        timeout: float | None = None,
         max_retries: int = DEFAULT_MAX_RETRIES,
         debug: bool = False,
         http_client: httpx.AsyncClient | None = None,
@@ -272,7 +280,7 @@ class AsyncHookbase:
         self.tunnels = AsyncTunnels(self._transport)
 
     async def close(self) -> None:
-        """Close the underlying async HTTP client."""
+        """Close the async HTTP client the SDK created (a supplied one stays open)."""
         await self._transport.close()
 
     async def __aenter__(self) -> AsyncHookbase:
