@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import builtins
+
 from .._pagination import (
     AsyncLimitOffsetPage,
     SyncLimitOffsetPage,
@@ -42,11 +44,11 @@ class Deliveries(SyncResource):
         resp = self._request("POST", f"/api/deliveries/{id}/replay")
         return self._parse(ReplayResult, resp)
 
-    def bulk_replay(self, ids: list[str]) -> BulkReplayResult:
+    def bulk_replay(self, ids: builtins.list[str]) -> BulkReplayResult:
         resp = self._request("POST", "/api/deliveries/bulk-replay", json={"deliveryIds": ids})
         return self._parse(BulkReplayResult, resp)
 
-    def bulk_replay_events(self, event_ids: list[str]) -> BulkReplayResult:
+    def bulk_replay_events(self, event_ids: builtins.list[str]) -> BulkReplayResult:
         resp = self._request(
             "POST", "/api/deliveries/bulk-replay-events", json={"eventIds": event_ids},
         )
@@ -85,11 +87,11 @@ class AsyncDeliveries(AsyncResource):
         resp = await self._request("POST", f"/api/deliveries/{id}/replay")
         return self._parse(ReplayResult, resp)
 
-    async def bulk_replay(self, ids: list[str]) -> BulkReplayResult:
+    async def bulk_replay(self, ids: builtins.list[str]) -> BulkReplayResult:
         resp = await self._request("POST", "/api/deliveries/bulk-replay", json={"deliveryIds": ids})
         return self._parse(BulkReplayResult, resp)
 
-    async def bulk_replay_events(self, event_ids: list[str]) -> BulkReplayResult:
+    async def bulk_replay_events(self, event_ids: builtins.list[str]) -> BulkReplayResult:
         resp = await self._request(
             "POST", "/api/deliveries/bulk-replay-events",
             json={"eventIds": event_ids},

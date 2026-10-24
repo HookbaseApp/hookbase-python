@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from typing import Any
 
 from .._pagination import (
@@ -16,7 +17,7 @@ from ..models.routes import (
     Route,
     UpdateRouteParams,
 )
-from ._base import AsyncResource, SyncResource, _to_body
+from ._base import AsyncResource, SyncResource, _to_body, _warn_ignored
 
 
 class Routes(SyncResource):
@@ -29,10 +30,11 @@ class Routes(SyncResource):
         destination_id: str | None = None,
         is_active: bool | None = None,
     ) -> SyncOffsetPage[Route]:
-        params = self._clean_params({
-            "page": page, "pageSize": page_size,
-            "sourceId": source_id, "destinationId": destination_id, "isActive": is_active,
-        })
+        _warn_ignored(
+            "routes.list()", source_id=source_id, destination_id=destination_id,
+            is_active=is_active,
+        )
+        params = self._clean_params({"page": page, "pageSize": page_size})
         return _fetch_offset_page(
             self._transport, "/api/routes", params, Route,
             data_key="routes",
@@ -75,17 +77,17 @@ class Routes(SyncResource):
             json={"ids": ids, "isActive": is_active},
         )
 
-    def bulk_delete(self, ids: list[str]) -> BulkDeleteResult:
+    def bulk_delete(self, ids: builtins.list[str]) -> BulkDeleteResult:
         resp = self._request("DELETE", "/api/routes/bulk", json={"ids": ids})
         return self._parse(BulkDeleteResult, resp)
 
-    def export(self, *, ids: list[str] | None = None) -> dict[str, Any]:
+    def export(self, *, ids: builtins.list[str] | None = None) -> dict[str, Any]:
         params = {"ids": ",".join(ids)} if ids else None
         return self._request("GET", "/api/routes/export", params=params)
 
     def import_routes(
         self,
-        routes: list[dict[str, Any]],
+        routes: builtins.list[dict[str, Any]],
         *,
         conflict_strategy: str = "skip",
         validate_only: bool = False,
@@ -108,10 +110,11 @@ class AsyncRoutes(AsyncResource):
         destination_id: str | None = None,
         is_active: bool | None = None,
     ) -> AsyncOffsetPage[Route]:
-        params = self._clean_params({
-            "page": page, "pageSize": page_size,
-            "sourceId": source_id, "destinationId": destination_id, "isActive": is_active,
-        })
+        _warn_ignored(
+            "routes.list()", source_id=source_id, destination_id=destination_id,
+            is_active=is_active,
+        )
+        params = self._clean_params({"page": page, "pageSize": page_size})
         return await _async_fetch_offset_page(
             self._transport, "/api/routes", params, Route,
             data_key="routes",
@@ -154,17 +157,17 @@ class AsyncRoutes(AsyncResource):
             json={"ids": ids, "isActive": is_active},
         )
 
-    async def bulk_delete(self, ids: list[str]) -> BulkDeleteResult:
+    async def bulk_delete(self, ids: builtins.list[str]) -> BulkDeleteResult:
         resp = await self._request("DELETE", "/api/routes/bulk", json={"ids": ids})
         return self._parse(BulkDeleteResult, resp)
 
-    async def export(self, *, ids: list[str] | None = None) -> dict[str, Any]:
+    async def export(self, *, ids: builtins.list[str] | None = None) -> dict[str, Any]:
         params = {"ids": ",".join(ids)} if ids else None
         return await self._request("GET", "/api/routes/export", params=params)
 
     async def import_routes(
         self,
-        routes: list[dict[str, Any]],
+        routes: builtins.list[dict[str, Any]],
         *,
         conflict_strategy: str = "skip",
         validate_only: bool = False,

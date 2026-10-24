@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from typing import Any
 
 from .._pagination import (
@@ -17,7 +18,7 @@ from ..models.sources import (
     UpdateSourceParams,
     update_source_body,
 )
-from ._base import AsyncResource, SyncResource, _to_body
+from ._base import AsyncResource, SyncResource, _to_body, _warn_ignored
 
 
 class Sources(SyncResource):
@@ -30,10 +31,10 @@ class Sources(SyncResource):
         provider: str | None = None,
         is_active: bool | None = None,
     ) -> SyncOffsetPage[Source]:
-        params = self._clean_params({
-            "page": page, "pageSize": page_size,
-            "search": search, "provider": provider, "isActive": is_active,
-        })
+        _warn_ignored(
+            "sources.list()", search=search, provider=provider, is_active=is_active,
+        )
+        params = self._clean_params({"page": page, "pageSize": page_size})
         return _fetch_offset_page(
             self._transport, "/api/sources", params, Source,
             data_key="sources",
@@ -102,13 +103,13 @@ class Sources(SyncResource):
         """
         self._request("POST", f"/api/sources/{id}/pending-verification/adopt")
 
-    def export(self, *, ids: list[str] | None = None) -> dict[str, Any]:
+    def export(self, *, ids: builtins.list[str] | None = None) -> dict[str, Any]:
         params = {"ids": ",".join(ids)} if ids else None
         return self._request("GET", "/api/sources/export", params=params)
 
     def import_sources(
         self,
-        sources: list[dict[str, Any]],
+        sources: builtins.list[dict[str, Any]],
         *,
         conflict_strategy: str = "skip",
         validate_only: bool = False,
@@ -120,7 +121,7 @@ class Sources(SyncResource):
         })
         return self._parse(ImportResult, resp)
 
-    def bulk_delete(self, ids: list[str]) -> BulkDeleteResult:
+    def bulk_delete(self, ids: builtins.list[str]) -> BulkDeleteResult:
         resp = self._request("DELETE", "/api/sources/bulk", json={"ids": ids})
         return self._parse(BulkDeleteResult, resp)
 
@@ -135,10 +136,10 @@ class AsyncSources(AsyncResource):
         provider: str | None = None,
         is_active: bool | None = None,
     ) -> AsyncOffsetPage[Source]:
-        params = self._clean_params({
-            "page": page, "pageSize": page_size,
-            "search": search, "provider": provider, "isActive": is_active,
-        })
+        _warn_ignored(
+            "sources.list()", search=search, provider=provider, is_active=is_active,
+        )
+        params = self._clean_params({"page": page, "pageSize": page_size})
         return await _async_fetch_offset_page(
             self._transport, "/api/sources", params, Source,
             data_key="sources",
@@ -207,13 +208,13 @@ class AsyncSources(AsyncResource):
         """
         await self._request("POST", f"/api/sources/{id}/pending-verification/adopt")
 
-    async def export(self, *, ids: list[str] | None = None) -> dict[str, Any]:
+    async def export(self, *, ids: builtins.list[str] | None = None) -> dict[str, Any]:
         params = {"ids": ",".join(ids)} if ids else None
         return await self._request("GET", "/api/sources/export", params=params)
 
     async def import_sources(
         self,
-        sources: list[dict[str, Any]],
+        sources: builtins.list[dict[str, Any]],
         *,
         conflict_strategy: str = "skip",
         validate_only: bool = False,
@@ -225,6 +226,6 @@ class AsyncSources(AsyncResource):
         })
         return self._parse(ImportResult, resp)
 
-    async def bulk_delete(self, ids: list[str]) -> BulkDeleteResult:
+    async def bulk_delete(self, ids: builtins.list[str]) -> BulkDeleteResult:
         resp = await self._request("DELETE", "/api/sources/bulk", json={"ids": ids})
         return self._parse(BulkDeleteResult, resp)

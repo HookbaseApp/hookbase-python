@@ -1,4 +1,23 @@
-from .analytics import AnalyticsTimeline, DashboardData
+from .analytics import (
+    AnalyticsTimeline,
+    DashboardData,
+    DashboardOverview,
+    DestinationErrorCount,
+    DestinationPerformance,
+    ErrorBreakdown,
+    ErrorTrendPoint,
+    LatencyBucket,
+    LatencyPercentiles,
+    LatencyStats,
+    LatencyTrendPoint,
+    PayloadSizeDistribution,
+    RetryBucket,
+    RetryCounts,
+    RetryStats,
+    RoutePerformance,
+    SourcePerformance,
+    StatusCodeCount,
+)
 from .api_keys import ApiKey, ApiKeyWithSecret, CreateApiKeyParams
 from .applications import Application, CreateApplicationParams, UpdateApplicationParams
 from .catalog import (
@@ -12,13 +31,16 @@ from .catalog import (
     ProviderVerifyTokenInfo,
 )
 from .common import (
+    ApiListResponse,
     BulkDeleteResult,
+    CursorPaginationInfo,
     ImportDetails,
     ImportFailure,
     ImportResult,
     ImportResultItem,
     ImportSummary,
     ImportValidationResult,
+    PaginationInfo,
 )
 from .cron_jobs import (
     CreateCronGroupParams,
@@ -26,12 +48,15 @@ from .cron_jobs import (
     CronGroup,
     CronJob,
     CronJobExecution,
+    CronJobExecutionStatus,
     UpdateCronJobParams,
 )
 from .deliveries import (
     BulkReplayResult,
     Delivery,
+    DeliveryDestination,
     DeliveryDetail,
+    DeliveryEvent,
     DeliveryStatus,
     ReplayResult,
 )
@@ -42,8 +67,11 @@ from .destinations import (
     Destination,
     DestinationType,
     FieldMapping,
+    FieldMappingType,
+    FileFormat,
     GCSConfig,
     HttpMethod,
+    PartitionBy,
     R2Config,
     RateUnit,
     S3Config,
@@ -55,6 +83,9 @@ from .destinations import (
 from .dlq import (
     DlqBulkDeleteResult,
     DlqBulkRetryResult,
+    DlqBulkRetryResultItem,
+    DlqEndpointStat,
+    DlqEventTypeStat,
     DlqMessage,
     DlqRetryResult,
     DlqStats,
@@ -62,6 +93,7 @@ from .dlq import (
 from .endpoints import (
     CLEARABLE_ENDPOINT_FIELDS,
     BackoffType,
+    CircuitState,
     ClearableEndpointField,
     CreateEndpointParams,
     CustomHeader,
@@ -69,6 +101,7 @@ from .endpoints import (
     EndpointWithSecret,
     RotateSecretResult,
     SignatureScheme,
+    SuccessStatusCode,
     UpdateEndpointParams,
     WebhookEndpoint,
 )
@@ -76,7 +109,9 @@ from .event_types import CreateEventTypeParams, EventType, UpdateEventTypeParams
 from .events import (
     DeliveryStats,
     Event,
+    EventDebugEvent,
     EventDebugInfo,
+    EventDelivery,
     EventDetail,
     InboundEventStatus,
 )
@@ -92,12 +127,14 @@ from .messages import (
     MessageStatus,
     OutboundAttempt,
     OutboundMessage,
+    SendEventEndpoint,
     SendEventParams,
     SendEventResponse,
     StatsSummary,
 )
 from .messages import ReplayResult as OutboundReplayResult
 from .organizations import Invite, Organization, OrganizationMember
+from .portal_tokens import CreatePortalTokenParams, PortalToken
 from .routes import (
     CircuitBreakerConfig,
     CircuitStatus,
@@ -106,19 +143,34 @@ from .routes import (
     Route,
     UpdateRouteParams,
 )
-from .schemas import CreateSchemaParams, Schema, SchemaValidationResult, UpdateSchemaParams
+from .schemas import (
+    CreateSchemaParams,
+    Schema,
+    SchemaRoute,
+    SchemaValidationError,
+    SchemaValidationResult,
+    UpdateSchemaParams,
+)
 from .sources import (
     CLEARABLE_SOURCE_FIELDS,
     KNOWN_SOURCE_PROVIDERS,
     ClearableSourceField,
     CreateSourceParams,
     DedupStrategy,
+    IngestMethod,
     IpFilterMode,
     PendingVerification,
     Source,
     SourceProvider,
     SourceWithSecret,
     UpdateSourceParams,
+)
+from .subscriptions import (
+    CreateSubscriptionParams,
+    LabelFilterMode,
+    LabelFilterValue,
+    Subscription,
+    UpdateSubscriptionParams,
 )
 from .transforms import (
     ContentFormat,
@@ -128,12 +180,28 @@ from .transforms import (
     TransformType,
     UpdateTransformParams,
 )
-from .tunnels import CreateTunnelParams, Tunnel
+from .tunnels import CreateTunnelParams, Tunnel, TunnelToken, UpdateTunnelParams
 
 __all__ = [
     # Analytics
     "AnalyticsTimeline",
     "DashboardData",
+    "DashboardOverview",
+    "DestinationErrorCount",
+    "DestinationPerformance",
+    "ErrorBreakdown",
+    "ErrorTrendPoint",
+    "LatencyBucket",
+    "LatencyPercentiles",
+    "LatencyStats",
+    "LatencyTrendPoint",
+    "PayloadSizeDistribution",
+    "RetryBucket",
+    "RetryCounts",
+    "RetryStats",
+    "RoutePerformance",
+    "SourcePerformance",
+    "StatusCodeCount",
     # API Keys
     "ApiKey",
     "ApiKeyWithSecret",
@@ -159,6 +227,9 @@ __all__ = [
     "ImportDetails",
     "ImportFailure",
     "ImportValidationResult",
+    "ApiListResponse",
+    "CursorPaginationInfo",
+    "PaginationInfo",
     # Cron Jobs
     "CreateCronGroupParams",
     "CreateCronJobParams",
@@ -166,12 +237,15 @@ __all__ = [
     "CronJob",
     "CronJobExecution",
     "UpdateCronJobParams",
+    "CronJobExecutionStatus",
     # Deliveries
     "BulkReplayResult",
     "Delivery",
     "DeliveryDetail",
     "DeliveryStatus",
     "ReplayResult",
+    "DeliveryDestination",
+    "DeliveryEvent",
     # Destinations
     "AuthType",
     "AzureBlobConfig",
@@ -188,12 +262,18 @@ __all__ = [
     "Throttle",
     "ThrottleMode",
     "UpdateDestinationParams",
+    "FieldMappingType",
+    "FileFormat",
+    "PartitionBy",
     # DLQ
     "DlqBulkDeleteResult",
     "DlqBulkRetryResult",
     "DlqMessage",
     "DlqRetryResult",
     "DlqStats",
+    "DlqBulkRetryResultItem",
+    "DlqEndpointStat",
+    "DlqEventTypeStat",
     # Endpoints
     "CLEARABLE_ENDPOINT_FIELDS",
     "BackoffType",
@@ -206,6 +286,8 @@ __all__ = [
     "SignatureScheme",
     "UpdateEndpointParams",
     "WebhookEndpoint",
+    "CircuitState",
+    "SuccessStatusCode",
     # Event Types
     "CreateEventTypeParams",
     "EventType",
@@ -216,6 +298,8 @@ __all__ = [
     "EventDebugInfo",
     "EventDetail",
     "InboundEventStatus",
+    "EventDebugEvent",
+    "EventDelivery",
     # Filters
     "CreateFilterParams",
     "Filter",
@@ -231,10 +315,14 @@ __all__ = [
     "SendEventParams",
     "SendEventResponse",
     "StatsSummary",
+    "SendEventEndpoint",
     # Organizations
     "Invite",
     "Organization",
     "OrganizationMember",
+    # Portal Tokens
+    "CreatePortalTokenParams",
+    "PortalToken",
     # Routes
     "CircuitBreakerConfig",
     "CircuitStatus",
@@ -245,8 +333,10 @@ __all__ = [
     # Schemas
     "CreateSchemaParams",
     "Schema",
+    "SchemaValidationError",
     "SchemaValidationResult",
     "UpdateSchemaParams",
+    "SchemaRoute",
     # Sources
     "CLEARABLE_SOURCE_FIELDS",
     "KNOWN_SOURCE_PROVIDERS",
@@ -259,6 +349,13 @@ __all__ = [
     "SourceProvider",
     "SourceWithSecret",
     "UpdateSourceParams",
+    "IngestMethod",
+    # Subscriptions
+    "CreateSubscriptionParams",
+    "LabelFilterMode",
+    "LabelFilterValue",
+    "Subscription",
+    "UpdateSubscriptionParams",
     # Transforms
     "ContentFormat",
     "CreateTransformParams",
@@ -268,5 +365,7 @@ __all__ = [
     "UpdateTransformParams",
     # Tunnels
     "CreateTunnelParams",
+    "TunnelToken",
+    "UpdateTunnelParams",
     "Tunnel",
 ]

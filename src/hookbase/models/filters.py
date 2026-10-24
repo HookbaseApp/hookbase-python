@@ -21,7 +21,7 @@ class Filter(HookbaseModel):
     slug: str
     description: str | None = None
     conditions: list[FilterCondition] = []
-    logic: str = "and"
+    logic: str = "AND"
     created_at: str = ""
     updated_at: str = ""
 
@@ -39,6 +39,7 @@ class CreateFilterParams(HookbaseModel):
     description: str | None = None
     conditions: list[FilterCondition]
     logic: str | None = None
+    """``"AND"`` (default) or ``"OR"``; sent uppercase whatever the case given."""
 
 
 class UpdateFilterParams(HookbaseModel):
@@ -57,4 +58,4 @@ class FilterTestInput(HookbaseModel):
 class FilterTestResult(HookbaseModel):
     matches: bool
     results: list[dict[str, Any]] = []
-    logic: str = "and"
+    logic: str = "AND"

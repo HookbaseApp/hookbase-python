@@ -36,6 +36,15 @@ class UpdateSchemaParams(HookbaseModel):
     json_schema: dict[str, Any] | None = None
 
 
+class SchemaValidationError(HookbaseModel):
+    path: str = ""
+    """Where in the payload the problem is: a dotted path such as ``customer.email``, or
+    ``root`` for the payload itself."""
+    message: str
+
+
 class SchemaValidationResult(HookbaseModel):
+    """``schemas.validate()``: whether the payload matches the schema, and why not."""
+
     valid: bool
-    errors: list[str] = []
+    errors: list[SchemaValidationError] = []

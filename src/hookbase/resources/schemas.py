@@ -8,7 +8,12 @@ from .._pagination import (
     _async_fetch_offset_page,
     _fetch_offset_page,
 )
-from ..models.schemas import CreateSchemaParams, Schema, UpdateSchemaParams
+from ..models.schemas import (
+    CreateSchemaParams,
+    Schema,
+    SchemaValidationResult,
+    UpdateSchemaParams,
+)
 from ._base import AsyncResource, SyncResource, _to_body
 
 
@@ -19,6 +24,10 @@ class Schemas(SyncResource):
         page: int | None = None,
         page_size: int | None = None,
     ) -> SyncOffsetPage[Schema]:
+        """Every schema in the organization, as one page.
+
+        The API does not paginate schemas; ``page``/``page_size`` are sent but have no effect.
+        """
         params = self._clean_params({"page": page, "pageSize": page_size})
         return _fetch_offset_page(
             self._transport, "/api/schemas", params, Schema,
@@ -40,6 +49,17 @@ class Schemas(SyncResource):
 
     def delete(self, id: str) -> None:
         self._request("DELETE", f"/api/schemas/{id}")
+
+    def validate(self, id: str, payload: Any) -> SchemaValidationResult:
+        """Check a payload against the schema without sending anything.
+
+        The API's validator covers ``type``, ``required``, ``properties``, ``items``, ``enum``,
+        string length and ``pattern``, and numeric ``minimum``/``maximum``.
+        """
+        resp = self._request(
+            "POST", f"/api/schemas/{id}/validate", json={"payload": payload},
+        )
+        return self._parse(SchemaValidationResult, resp)
 
 
 class AsyncSchemas(AsyncResource):
@@ -70,3 +90,14 @@ class AsyncSchemas(AsyncResource):
 
     async def delete(self, id: str) -> None:
         await self._request("DELETE", f"/api/schemas/{id}")
+
+    async def validate(self, id: str, payload: Any) -> SchemaValidationResult:
+        """Check a payload against the schema without sending anything.
+
+        The API's validator covers ``type``, ``required``, ``properties``, ``items``, ``enum``,
+        string length and ``pattern``, and numeric ``minimum``/``maximum``.
+        """
+        resp = await self._request(
+            "POST", f"/api/schemas/{id}/validate", json={"payload": payload},
+        )
+        return self._parse(SchemaValidationResult, resp)

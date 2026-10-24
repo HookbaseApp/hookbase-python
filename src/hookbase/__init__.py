@@ -1,5 +1,6 @@
 """Hookbase Python SDK - Official client for the Hookbase webhook platform."""
 
+from ._constants import NOT_GIVEN, NotGiven
 from ._version import __version__
 from .client import AsyncHookbase, Hookbase
 from .errors import (
@@ -36,4 +37,7 @@ __all__ = [
     "TimeoutError",
     "NetworkError",
     "WebhookVerificationError",
+    # Sentinel for omitted arguments
+    "NOT_GIVEN",
+    "NotGiven",
 ]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import Any, TypeVar
 
 from pydantic import TypeAdapter
@@ -84,3 +85,18 @@ class AsyncResource:
     @staticmethod
     def _clean_params(params: dict[str, Any]) -> dict[str, Any]:
         return {k: v for k, v in params.items() if v is not None}
+
+
+def _warn_ignored(method: str, **filters: Any) -> None:
+    """Warn that the API does not read the given (non-None) arguments.
+
+    Kept for callers that already pass them; sending them would only look like it filtered.
+    """
+    ignored = [name for name, value in filters.items()
+               if value is not None]
+    if ignored:
+        warnings.warn(
+            f"{method} ignores {', '.join(ignored)}: the API has no such filter.",
+            DeprecationWarning,
+            stacklevel=3,
+        )

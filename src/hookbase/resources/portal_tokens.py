@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from typing import Any
 
 from ..models.portal_tokens import CreatePortalTokenParams, PortalToken
@@ -21,7 +22,7 @@ class PortalTokens(SyncResource):
         data = resp.get("data", resp)
         return self._parse(PortalToken, data)
 
-    def list(self, application_id: str) -> list[PortalToken]:
+    def list(self, application_id: str) -> builtins.list[PortalToken]:
         resp = self._request(
             "GET",
             f"/api/portal/webhook-applications/{application_id}/tokens",
@@ -48,7 +49,7 @@ class AsyncPortalTokens(AsyncResource):
         data = resp.get("data", resp)
         return self._parse(PortalToken, data)
 
-    async def list(self, application_id: str) -> list[PortalToken]:
+    async def list(self, application_id: str) -> builtins.list[PortalToken]:
         resp = await self._request(
             "GET",
             f"/api/portal/webhook-applications/{application_id}/tokens",

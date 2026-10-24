@@ -50,17 +50,38 @@ from hookbase import Hookbase
 client = Hookbase(
     api_key="whr_...",           # Required
     base_url="https://...",      # Default: https://api.hookbase.app
-    timeout=30.0,                # Seconds (default: 30)
+    timeout=30.0,                # Seconds or httpx.Timeout (default: 30); None = no timeout
     max_retries=3,               # Default: 3
     debug=False,                 # Log requests
 )
+```
+
+#### Custom `httpx` client
+
+Pass your own `httpx.Client` (or `httpx.AsyncClient` for `AsyncHookbase`) for proxies, custom
+transports or TLS settings. The SDK uses it as given and never modifies it: every request is
+sent to an absolute URL built from `base_url`, with the SDK's `Authorization` (an `auth=` set on
+your client is not applied to Hookbase requests) and `User-Agent` headers. If you pass `timeout`
+(a number, an `httpx.Timeout`, or `None` for no timeout), it is applied to each request; if you
+leave it out, the client's own timeout applies. `close()` (and the context manager) leaves a client you supplied open, so close
+it yourself.
+
+```python
+import httpx
+from hookbase import Hookbase
+
+http = httpx.Client(verify="/etc/ssl/corp-ca.pem", timeout=10.0)
+client = Hookbase(api_key="whr_...", http_client=http)  # uses the 10s client timeout
+...
+client.close()
+http.close()
 ```
 
 ### Inbound Webhooks
 
 ```python
 # Sources
-client.sources.list(search="github", provider="github")
+client.sources.list(page_size=50)  # the API has no search/provider filter on this list
 client.sources.create({"name": "GitHub", "slug": "github", "provider": "github"})
 client.sources.get("src_id")
 client.sources.update("src_id", {"name": "Updated"})
@@ -105,10 +126,14 @@ client.deliveries.bulk_replay(["del_1", "del_2"])
 # Transforms & Filters
 client.transforms.create({"name": "Extract", "transformType": "jsonata", "code": "$.data"})
 client.transforms.test(code="$.data", payload={"data": {"key": "value"}})  # .result
-client.filters.test([{"field": "$.type", "operator": "eq", "value": "order"}], payload={...})
+client.filters.test(
+    [{"field": "type", "operator": "equals", "value": "order"}],  # dot paths: "data.status"
+    payload={"type": "order"},
+    logic="AND",  # or "OR"; sent uppercase
+)
 
 # Schemas
-client.schemas.create({"name": "OrderSchema", "jsonSchema": {"type": "object", ...}})
+client.schemas.create({"name": "OrderSchema", "jsonSchema": {"type": "object", "required": ["orderId"]}})
 ```
 
 ### Outbound Webhooks
@@ -132,7 +157,7 @@ client.outbound.subscriptions.create({"endpointId": "ep_id", "eventTypeId": "et_
 client.outbound.subscriptions.bulk_create("ep_id", ["et_1", "et_2"])
 
 # Send Events
-client.outbound.messages.send("app_id", event_type="order.created", payload={...})
+client.outbound.messages.send("app_id", event_type="order.created", payload={"orderId": "ord_1"})
 
 # Message Log
 client.outbound.message_log.list(application_id="app_id")
@@ -149,20 +174,30 @@ client.outbound.dlq.retry_bulk(["dlq_1", "dlq_2"])
 ### Admin
 
 ```python
-# Organizations
+# Organizations and creating API keys need a user session: with a whr_ API key the
+# API answers 403 (ForbiddenError).
 client.organizations.list()
 client.organizations.list_members("org_id")
 client.organizations.invite("org_id", "user@example.com", "member")
-
-# API Keys
 client.api_keys.create({"name": "CI Key", "scopes": ["read", "write"]})
 
-# Analytics
-client.analytics.dashboard(range="30d")
+# Analytics: range 1h, 24h, 7d or 30d (or "custom" with start_date/end_date)
+stats = client.analytics.dashboard(range="30d", tz="America/New_York")
+stats.overview.total_events, stats.latency.percentiles.p95, stats.errors.by_status_code
 
-# Cron Jobs & Tunnels
+# Schemas
+client.schemas.validate("sch_id", {"orderId": "ord_1"})  # .valid, .errors[].path/.message
+
+# Cron jobs
 client.cron_jobs.list()
-client.tunnels.list()
+client.cron_jobs.trigger("cron_id")  # .status, .response_status, .error
+client.cron_jobs.list_executions("cron_id", limit=10)
+
+# Tunnels: the auth token is returned once, on create
+tunnel = client.tunnels.create({"name": "dev"})
+tunnel.auth_token, tunnel.tunnel_url, tunnel.ws_url
+client.tunnels.regenerate_token(tunnel.id)  # new token; old connections are dropped
+client.tunnels.delete(tunnel.id)
 ```
 
 ### Pagination
@@ -180,9 +215,12 @@ for source in page.auto_paging_iter():
 while page.has_more:
     page = page.next_page()
 
+# Schemas and cron jobs are not paginated by the API: one page holding everything
+schemas = client.schemas.list()
+
 # Cursor-based (inbound events, applications, endpoints, subscriptions, etc.)
-page = client.outbound.applications.list(limit=50)
-for app in page.auto_paging_iter():
+apps = client.outbound.applications.list(limit=50)
+for app in apps.auto_paging_iter():
     print(app.name)
 for event in client.events.list(limit=100).auto_paging_iter():
     print(event.id)
@@ -221,6 +259,7 @@ from hookbase.models import CreateEndpointParams
 ep = client.outbound.endpoints.create(
     "app_id", CreateEndpointParams(url="https://example.com/hook", signature_scheme="ed25519")
 )
+assert ep.public_key is not None  # set for Ed25519 endpoints
 wh = Webhook(ep.public_key)  # "whpk_..."; same verify() API, tolerance and errors as v1
 payload = wh.verify(request_body, request_headers)
 
@@ -261,6 +300,35 @@ except APIError as e:
     print(f"{e.status_code}: {e} (request_id={e.request_id})")
 ```
 
+Every `APIError` carries:
+
+- `status_code`: the HTTP status actually returned (a `ValidationError` is 400 or 422).
+- `code`: the `code` from the response body, e.g. `LIMIT_EXCEEDED` or `FEATURE_DISABLED` on a
+  `ForbiddenError`. When the body has no `code`, it is the class default (`forbidden`,
+  `not_found`, `validation_error`, ...).
+- `details`: the body's `details` object (for validation failures, `{"fieldErrors": ...,
+  "formErrors": ...}`), or any extra fields the error sent (such as `current` and `max` on
+  `LIMIT_EXCEEDED`); `None` when there are none. `ValidationError.validation_errors` is the
+  `fieldErrors` map.
+- `request_id`: the `x-request-id` response header.
+
+`TimeoutError` and `NetworkError` (connection failures, and a `base_url` that is not an
+absolute http(s) URL) are raised for requests that got no response.
+
+### Retries
+
+Up to `max_retries` retries (default 3):
+
+- **429** is retried for every method after `Retry-After` (seconds or an HTTP date; 60 s
+  when the header is missing or unusable), as long as that wait is at most 60 s. A longer
+  `Retry-After` is not waited for: the `RateLimitError` is raised at once with `retry_after`
+  set, so you decide how to spend that time.
+- **Any 5xx, read timeouts and dropped connections** are retried with exponential backoff
+  (1, 2, 4 ... s, capped at 10 s, plus up to 1 s jitter) for every method except POST. A POST
+  is retried only when it carries an idempotency key (`outbound.messages.send` always does).
+- **A connection that was never made** is always retried.
+- **Other 4xx** responses are never retried.
+
 ### Pydantic Models
 
 All responses are typed Pydantic models with camelCase alias support:
@@ -278,6 +346,35 @@ source = client.sources.create({"name": "GitHub", "slug": "github", "provider": 
 # `provider` is any string (hookbase.models.KNOWN_SOURCE_PROVIDERS lists today's values), so a
 # source with a provider newer than this package still parses.
 ```
+
+## Upgrading to 4.1
+
+- `APIError.code` now carries the API's `code` from the response body (for example
+  `FEATURE_DISABLED` or `LIMIT_EXCEEDED` on a `ForbiddenError`, `DUPLICATE_NAME` on a
+  `ConflictError`) instead of a fixed string such as `"forbidden"` or `"conflict"`. The fixed
+  string is still used when the body has no `code`. Check code that compares `.code` to those
+  strings; `isinstance` checks on the error classes are unaffected.
+- `ValidationError.status_code` is the status actually returned (400 or 422); it used to be
+  always 400.
+- `APIError.details` is now populated (see [Error Handling](#error-handling)).
+- A custom `http_client` no longer needs `base_url`, auth headers or a timeout configured on it,
+  and `close()` no longer closes it.
+- `timeout=None` now means no timeout; leave `timeout` out to get the default.
+- Every 5xx (not only 500/502/503/504) is retried for retry-safe requests, and `Retry-After`
+  may be an HTTP date. A 429 whose `Retry-After` is longer than 60 s is no longer slept
+  through: `RateLimitError` is raised at once, `retry_after` set. An empty 2xx body returns
+  `None`; a 2xx body that is not valid JSON raises `APIError` (`code="invalid_response"`).
+- `Webhook("whsec_...")` raises `ValueError` for a secret that is not valid base64, at
+  construction rather than on the first `verify()`.
+- `analytics.dashboard()` returns the API's real shape (`overview`, `latency`, `errors`, ...).
+  The old top-level fields (`events_received`, `delivery_success_rate`, ...) are now
+  read-only properties derived from `overview`; before, they were always 0.
+- `sources.list(search=, provider=, is_active=)`, `destinations.list(search=, is_active=)` and
+  `routes.list(source_id=, destination_id=, is_active=)` warn (`DeprecationWarning`) and do
+  not send those filters, which the API never applied.
+- `transforms.update()` and `organizations.update()` make a second request to return the
+  stored object (they used to raise on the API's `{"success": true}` reply).
+- `SchemaValidationResult.errors` is a list of `SchemaValidationError` (`path`, `message`).
 
 ## Development
 
