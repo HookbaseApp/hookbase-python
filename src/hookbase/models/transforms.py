@@ -6,7 +6,19 @@ from pydantic import model_validator
 
 from ._base import HookbaseModel
 
-TransformType = Literal["jsonata", "javascript", "mapping", "liquid", "xslt"]
+# The engines the API runs (api/src/transforms/catalog.ts). "mapping" was never one: the API
+# rejects it with a 400. "jq" needs transform isolation on the server; without it the API answers
+# TRANSFORM_ENGINE_UNAVAILABLE.
+TransformType = Literal[
+    "jsonata",
+    "javascript",
+    "typescript",
+    "liquid",
+    "xslt",
+    "jmespath",
+    "jsonlogic",
+    "jq",
+]
 ContentFormat = Literal["json", "xml", "form", "text"]
 
 

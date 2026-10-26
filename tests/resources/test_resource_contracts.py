@@ -690,3 +690,13 @@ async def test_async_api_keys(mock_api):
     mock_api.get("/api/api-keys").mock(return_value=httpx.Response(200, json={"apiKeys": []}))
     async with AsyncHookbase(api_key=TEST_API_KEY) as c:
         assert await c.api_keys.list() == []
+
+
+def test_transform_type_covers_api_engines_and_not_mapping():
+    from typing import get_args
+
+    from hookbase.models.transforms import TransformType
+
+    assert set(get_args(TransformType)) == {
+        "jsonata", "javascript", "typescript", "liquid", "xslt", "jmespath", "jsonlogic", "jq",
+    }
