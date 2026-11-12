@@ -8,8 +8,9 @@ from pydantic.alias_generators import to_camel
 
 from ._base import HookbaseModel
 
-# API may return: pending, success, failed, retrying, delivered,
-# failed_over, schema_failed, exhausted, etc.
+# The API stores: pending, delivered, failed, failed_over, schema_failed, throttled,
+# awaiting_retry (a retry scheduled for later; see `next_retry_at`) and held (parked while the
+# route's circuit is open; see `hold_expires_at`). Any string, so a status added later still parses.
 DeliveryStatus = str
 
 
@@ -23,6 +24,11 @@ class Delivery(HookbaseModel):
     attempt_count: int = 0
     max_attempts: int = 5
     next_retry_at: str | None = None
+    """When the next retry is due. None for a held delivery: see `hold_expires_at`."""
+    hold_expires_at: str | None = None
+    """For a `held` delivery (parked because the route's circuit is open and the route has
+    `hold_on_circuit_open`): when the hold ends and the delivery fails if the circuit has not
+    closed. None for every other status."""
     response_status: int | None = None
     response_key: str | None = None
     response_headers: dict[str, Any] | None = None
@@ -121,8 +127,22 @@ class DeliveryDetail(Delivery):
 
 
 class ReplayResult(HookbaseModel):
+    """The result of `deliveries.replay`. The replay is a new delivery; the original keeps its
+    status."""
+
     delivery_id: str
+    """The new delivery's id."""
     message: str = ""
+    modified: bool = False
+    """Whether the replay sent an edited payload (`modified_payload` or `payload_patch`)."""
+    destination_overridden: bool = False
+    transform_overridden: bool = False
+    transform_persisted: bool = False
+    """Whether the transform override was also saved as the route's transform."""
+    headers_overridden: bool = False
+    target_destination_id: str | None = None
+    """The destination the replay goes to: the override when one was given, otherwise the
+    original's."""
 
 
 class BulkReplayResult(HookbaseModel):

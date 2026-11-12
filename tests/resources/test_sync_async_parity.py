@@ -185,7 +185,11 @@ CASES: dict[str, Case] = {
     "events.get": (lambda c: c.events.get("evt_1"), "GET", "/api/events/evt_1",
                    {"event": EVENT, "deliveries": []}, None, lambda r: r.id == "evt_1"),
     "events.debug": (lambda c: c.events.debug("evt_1"), "GET", "/api/events/evt_1/debug",
-                     {"event": EVENT}, None, lambda r: r is not None),
+                     {"event": EVENT, "deliveries": [{"id": "dlv_1", "status": "held",
+                                                      "holdExpiresAt": "2026-11-12T00:00:00Z"}],
+                      "debug": {"curlCommand": "curl x"}}, None,
+                     lambda r: r.curl_command == "curl x"
+                     and r.deliveries[0].hold_expires_at == "2026-11-12T00:00:00Z"),
     # outbound message log and DLQ
     "message_log.get": (lambda c: c.message_log.get("msg_1"), "GET",
                         "/api/outbound-messages/msg_1", {"data": MSG}, None,
@@ -396,6 +400,21 @@ CASES.update({
                             "contentFormats": ["json", "xml", "text"]}, None,
                            lambda r: r.engines[0].available is False
                            and r.content_formats == ["json", "xml", "text"]),
+    "deliveries.replay(edits)": (lambda c: c.deliveries.replay(
+                                     "dlv_1", payload_patch={"a": None},
+                                     destination_override="dst_2", persist_transform=False),
+                                 "POST", "/api/deliveries/dlv_1/replay",
+                                 {"deliveryId": "dlv_2", "modified": True,
+                                  "destinationOverridden": True, "targetDestinationId": "dst_2"},
+                                 {"payloadPatch": {"a": None}, "destinationOverride": "dst_2",
+                                  "persistTransform": False},
+                                 lambda r: r.modified and r.target_destination_id == "dst_2"),
+    "deliveries.list(held)": (lambda c: c.deliveries.list(status="held"), "GET",
+                              "/api/deliveries",
+                              {"deliveries": [{**DELIVERY, "status": "held",
+                                               "holdExpiresAt": "2026-11-12T00:00:00Z"}],
+                               "limit": 50, "offset": 0}, None,
+                              lambda r: r.data[0].hold_expires_at == "2026-11-12T00:00:00Z"),
 })
 
 

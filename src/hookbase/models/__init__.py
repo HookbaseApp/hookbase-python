@@ -113,8 +113,12 @@ from .event_types import CreateEventTypeParams, EventType, UpdateEventTypeParams
 from .events import (
     DeliveryStats,
     Event,
+    EventDebugDelivery,
+    EventDebugDestination,
     EventDebugEvent,
     EventDebugInfo,
+    EventDebugPatternHint,
+    EventDebugRouteCircuit,
     EventDelivery,
     EventDetail,
     InboundEventStatus,
@@ -309,6 +313,10 @@ __all__ = [
     "EventDetail",
     "InboundEventStatus",
     "EventDebugEvent",
+    "EventDebugDelivery",
+    "EventDebugDestination",
+    "EventDebugPatternHint",
+    "EventDebugRouteCircuit",
     "EventDelivery",
     # Filters
     "CreateFilterParams",
