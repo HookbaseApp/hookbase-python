@@ -36,10 +36,12 @@ class FieldMapping(HookbaseModel):
 
 
 class S3Config(HookbaseModel):
+    model_config = SECRET_MODEL_CONFIG
+
     bucket: str
     region: str
     access_key_id: str
-    secret_access_key: str
+    secret_access_key: str = Field(repr=False)
     prefix: str | None = None
     file_format: FileFormat | None = None
     partition_by: PartitionBy | None = None
@@ -53,17 +55,21 @@ class R2Config(HookbaseModel):
 
 
 class GCSConfig(HookbaseModel):
+    model_config = SECRET_MODEL_CONFIG
+
     bucket: str
     project_id: str
-    service_account_key: str
+    service_account_key: str = Field(repr=False)
     prefix: str | None = None
     file_format: FileFormat | None = None
     partition_by: PartitionBy | None = None
 
 
 class AzureBlobConfig(HookbaseModel):
+    model_config = SECRET_MODEL_CONFIG
+
     account_name: str
-    account_key: str
+    account_key: str = Field(repr=False)
     container_name: str
     prefix: str | None = None
     file_format: FileFormat | None = None
@@ -113,6 +119,9 @@ class Throttle(HookbaseModel):
 
 
 class Destination(HookbaseModel):
+    # The API returns headers and auth_config in full to a key with the write scope.
+    model_config = SECRET_MODEL_CONFIG
+
     id: str
     organization_id: str | None = None
     name: str
@@ -120,9 +129,9 @@ class Destination(HookbaseModel):
     type: DestinationType = "http"
     url: str = ""
     method: HttpMethod = "POST"
-    headers: dict[str, str] | None = None
+    headers: dict[str, str] | None = Field(default=None, repr=False)
     auth_type: str | None = "none"
-    auth_config: dict[str, Any] | None = None
+    auth_config: dict[str, Any] | None = Field(default=None, repr=False)
     timeout_ms: int = 30000
     throttle: Throttle | None = None
     is_active: bool = True
@@ -271,6 +280,8 @@ class DestinationSecret(HookbaseModel):
 
 
 class CreateDestinationParams(HookbaseModel):
+    model_config = SECRET_MODEL_CONFIG
+
     name: str
     slug: str | None = None
     """URL-safe identifier, `^[a-z0-9-]+$`, max 50 characters.
@@ -283,17 +294,18 @@ class CreateDestinationParams(HookbaseModel):
     type: DestinationType | None = None
     url: str | None = None
     method: HttpMethod | None = None
-    headers: dict[str, str] | None = None
+    headers: dict[str, str] | None = Field(default=None, repr=False)
     """Sent as a mapping — the shape the destinations API takes, unlike
     endpoint headers."""
     auth_type: AuthType | None = None
-    auth_config: dict[str, Any] | None = None
+    auth_config: dict[str, Any] | None = Field(default=None, repr=False)
     timeout_ms: int | None = None
     """Request timeout in milliseconds, 1000-60000. The API defaults to 30000."""
     throttle: Throttle | None = None
-    config: dict[str, Any] | BridgeConfig | None = None
+    config: dict[str, Any] | BridgeConfig | None = Field(default=None, repr=False)
     """Settings for a non-HTTP type: a mapping for queue and storage types, or a
-    :class:`BridgeConfig` (or its camelCase mapping) for `type="bridge"`."""
+    :class:`BridgeConfig` (or its camelCase mapping) for `type="bridge"`. Left out of repr()
+    because a queue or storage config holds its credentials."""
     field_mapping: list[FieldMapping] | None = None
     use_static_ip: bool | None = None
     batch_size: int | None = None
@@ -321,17 +333,19 @@ class CreateDestinationParams(HookbaseModel):
 
 
 class UpdateDestinationParams(HookbaseModel):
+    model_config = SECRET_MODEL_CONFIG
+
     name: str | None = None
     url: str | None = None
     method: HttpMethod | None = None
-    headers: dict[str, str] | None = None
+    headers: dict[str, str] | None = Field(default=None, repr=False)
     auth_type: AuthType | None = None
-    auth_config: dict[str, Any] | None = None
+    auth_config: dict[str, Any] | None = Field(default=None, repr=False)
     timeout_ms: int | None = None
     """Request timeout in milliseconds, 1000-60000."""
     throttle: Throttle | None = None
     is_active: bool | None = None
-    config: dict[str, Any] | BridgeConfig | None = None
+    config: dict[str, Any] | BridgeConfig | None = Field(default=None, repr=False)
     field_mapping: list[FieldMapping] | None = None
     use_static_ip: bool | None = None
     batch_size: int | None = None

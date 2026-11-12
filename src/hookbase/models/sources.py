@@ -213,6 +213,8 @@ class PendingVerification(HookbaseModel):
 
 
 class CreateSourceParams(HookbaseModel):
+    model_config = SECRET_MODEL_CONFIG
+
     name: str
     #: Required: it forms the ingest URL, /ingest/<org>/<slug>, and cannot be changed later.
     slug: str
@@ -232,9 +234,9 @@ class CreateSourceParams(HookbaseModel):
     #:   - "operator": omit it and the API generates one, returned once on the created source.
     #:   - "public_key": the vendor's public key (PEM or base64).
     #:   - "built_in" (wise, wise-sandbox, aws-sns): send nothing; any secret is a 400.
-    signing_secret: str | None = None
+    signing_secret: str | None = Field(default=None, repr=False)
     #: Meta providers (whatsapp) only; a 400 for any other. Omit it and the API generates one.
-    verify_token: str | None = None
+    verify_token: str | None = Field(default=None, repr=False)
     #: Reject events whose signature fails verification. Defaults to False.
     reject_invalid_signatures: bool | None = None
     rate_limit_per_minute: int | None = None
@@ -255,13 +257,15 @@ class CreateSourceParams(HookbaseModel):
 
 
 class UpdateSourceParams(HookbaseModel):
+    model_config = SECRET_MODEL_CONFIG
+
     name: str | None = None
     description: str | None = None
     provider: SourceProvider | None = None
     is_active: bool | None = None
-    signing_secret: str | None = None
+    signing_secret: str | None = Field(default=None, repr=False)
     #: Meta providers (whatsapp) only. "" regenerates it, as does clear=["verifyToken"].
-    verify_token: str | None = None
+    verify_token: str | None = Field(default=None, repr=False)
     reject_invalid_signatures: bool | None = None
     rate_limit_per_minute: int | None = None
     ip_filter_mode: IpFilterMode | None = None

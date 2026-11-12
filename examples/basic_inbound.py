@@ -13,7 +13,9 @@ source = client.sources.create({
 })
 print(f"Source created: {source.id}")
 print(f"Ingest URL: {source.ingest_url}")
-print(f"Signing secret: {source.signing_secret}")
+# The signing secret is returned this once. Put it in your secret store (and GitHub's webhook
+# settings) instead of printing or logging it; client.sources.reveal_secret() shows it again.
+github_signing_secret = source.signing_secret
 
 # Create a destination to forward webhooks to
 dest = client.destinations.create({

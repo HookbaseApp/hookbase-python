@@ -45,8 +45,11 @@ SuccessStatusCode = Union[int, str]
 class CustomHeader(HookbaseModel):
     """One endpoint header, in the `{"name": .., "value": ..}` form the API takes."""
 
+    model_config = SECRET_MODEL_CONFIG
+
     name: str
-    value: str
+    value: str = Field(repr=False)
+    """Left out of repr(): custom headers commonly carry the receiver's credential."""
 
 
 class WebhookEndpoint(HookbaseModel):
@@ -59,6 +62,9 @@ class WebhookEndpoint(HookbaseModel):
     settings below simply had nowhere to be decoded into and were dropped by
     `extra="ignore"` without a word.
     """
+
+    # The API returns header values in full to a key with the write scope.
+    model_config = SECRET_MODEL_CONFIG
 
     id: str
     application_id: str
@@ -78,7 +84,7 @@ class WebhookEndpoint(HookbaseModel):
     public_key: str | None = None
     """The `whpk_` Ed25519 public key to verify `v1a` signatures with:
     `Webhook(endpoint.public_key)`. `None` for HMAC endpoints."""
-    headers: dict[str, str] | None = None
+    headers: dict[str, str] | None = Field(default=None, repr=False)
     header_list: list[CustomHeader] = []
     """Headers in the `[{"name": .., "value": ..}]` form the API sends and
     takes. `headers` is the same data as a mapping, which cannot represent a
@@ -187,12 +193,14 @@ class EndpointWithSecret(WebhookEndpoint):
 
 
 class CreateEndpointParams(HookbaseModel):
+    model_config = SECRET_MODEL_CONFIG
+
     url: str
     description: str | None = None
     signature_scheme: SignatureScheme | None = None
     """`"hmac-sha256"` (the default) or `"ed25519"`. For Ed25519 Hookbase
     generates the key pair and returns only `public_key`."""
-    headers: dict[str, str] | list[CustomHeader] | None = None
+    headers: dict[str, str] | list[CustomHeader] | None = Field(default=None, repr=False)
     timeout_seconds: int | None = None
     rate_limit_per_second: int | None = None
     success_status_codes: list[SuccessStatusCode] | None = None
@@ -224,6 +232,8 @@ class CreateEndpointParams(HookbaseModel):
 
 
 class UpdateEndpointParams(HookbaseModel):
+    model_config = SECRET_MODEL_CONFIG
+
     url: str | None = None
     description: str | None = None
     signature_scheme: SignatureScheme | None = None
@@ -231,7 +241,7 @@ class UpdateEndpointParams(HookbaseModel):
     previous one stops signing at once (no grace period)."""
     is_disabled: bool | None = None
     disabled_reason: str | None = None
-    headers: dict[str, str] | list[CustomHeader] | None = None
+    headers: dict[str, str] | list[CustomHeader] | None = Field(default=None, repr=False)
     timeout_seconds: int | None = None
     rate_limit_per_second: int | None = None
     success_status_codes: list[SuccessStatusCode] | None = None

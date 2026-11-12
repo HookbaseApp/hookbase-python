@@ -427,11 +427,21 @@ source = client.sources.create({"name": "GitHub", "slug": "github", "provider": 
 - `sources.export()` returns a raw dict, and the API now sends its `ipAllowlist`, `ipDenylist`,
   `encryptFields` and `maskFields` as JSON arrays; they used to be JSON-encoded strings. Code
   that calls `json.loads` on them must stop. The `Source` model already read either form.
-- Secrets no longer appear in `repr()` or `str()` of `DestinationWithSecret`,
-  `DestinationSecret`, `SourceWithSecret`, `PendingVerification`, `WebhookEndpoint`,
-  `EndpointWithSecret`, `RotateSecretResult`, `ApiKeyWithSecret`, `Tunnel`, `TunnelToken` or
-  `PortalToken`. A `pydantic.ValidationError` raised while parsing one of them leaves out the
-  response it was given. Read the secret from its attribute (`dest.signing_secret`).
+- Secrets and credentials no longer appear in `repr()` or `str()`:
+  - The secrets the API returns, on `DestinationWithSecret`, `DestinationSecret`,
+    `SourceWithSecret`, `PendingVerification`, `WebhookEndpoint`, `EndpointWithSecret`,
+    `RotateSecretResult`, `ApiKeyWithSecret`, `Tunnel`, `TunnelToken` and `PortalToken`.
+  - The headers and auth configs the API returns in full to a key with the `write` scope:
+    `Destination.headers` and `auth_config`, `WebhookEndpoint.headers` (and each
+    `CustomHeader.value`), and `CronJob.headers`.
+  - The credentials you pass in: `signing_secret` and `verify_token` on `CreateSourceParams`
+    and `UpdateSourceParams`; `headers`, `auth_config` and `config` on `CreateDestinationParams`
+    and `UpdateDestinationParams`; `headers` on the endpoint and cron job params; and the keys
+    on `S3Config`, `GCSConfig` and `AzureBlobConfig`.
+
+  A `pydantic.ValidationError` from one of these models, or from a list of them, leaves out the
+  input it was given. The values are still sent and still readable from their attributes
+  (`dest.signing_secret`).
 - **Typing:** `CreateDestinationParams.config` and `UpdateDestinationParams.config` are now
   `dict[str, Any] | BridgeConfig | None`, so `params.config["bucket"]` no longer type-checks
   until you narrow it with `isinstance(params.config, dict)`. Because `DestinationType`,
