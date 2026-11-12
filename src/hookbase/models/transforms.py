@@ -86,3 +86,29 @@ class TransformTestResult(HookbaseModel):
         if isinstance(data, dict) and "result" in data:
             return {**data, "output": data["result"]}
         return data
+
+
+class TransformEngine(HookbaseModel):
+    """One transform language the API runs, as `transforms.engines()` lists it."""
+
+    type: TransformType
+    """The value for `transform_type`."""
+    label: str = ""
+    description: str = ""
+    file_extension: str = ""
+    """The file extension editors and the CLI use for the language, without the dot."""
+    starter_code: str = ""
+    """A minimal working transform in the language."""
+    ai_generate: bool = False
+    """Whether the dashboard's AI generation offers this language."""
+    available: bool = True
+    """False when the language needs transform isolation and this deployment has it off; the API
+    then refuses to save or run transforms in it (TRANSFORM_ENGINE_UNAVAILABLE)."""
+
+
+class TransformEnginesResponse(HookbaseModel):
+    """The result of `transforms.engines()`."""
+
+    engines: list[TransformEngine] = []
+    content_formats: list[ContentFormat] = []
+    """The values `input_format` and `output_format` accept."""

@@ -391,6 +391,11 @@ CASES.update({
     "destinations.get(bridge)": (lambda c: c.destinations.get("dst_1"), "GET",
                                  "/api/destinations/dst_1", {"destination": BRIDGE}, None,
                                  lambda r: r.bridge_config.event_type == "order.created"),
+    "transforms.engines": (lambda c: c.transforms.engines(), "GET", "/api/transforms/engines",
+                           {"engines": [{"type": "jq", "label": "jq", "available": False}],
+                            "contentFormats": ["json", "xml", "text"]}, None,
+                           lambda r: r.engines[0].available is False
+                           and r.content_formats == ["json", "xml", "text"]),
 })
 
 

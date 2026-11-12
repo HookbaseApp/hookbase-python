@@ -11,6 +11,7 @@ from .._pagination import (
 from ..models.transforms import (
     CreateTransformParams,
     Transform,
+    TransformEnginesResponse,
     TransformTestResult,
     UpdateTransformParams,
 )
@@ -29,6 +30,15 @@ class Transforms(SyncResource):
             self._transport, "/api/transforms", params, Transform,
             data_key="transforms",
         )
+
+    def engines(self) -> TransformEnginesResponse:
+        """List the transform languages and content formats this deployment supports.
+
+        A language with `available` False needs transform isolation, which this deployment has
+        off: transforms in it can't be saved or run.
+        """
+        resp = self._request("GET", "/api/transforms/engines")
+        return self._parse(TransformEnginesResponse, resp)
 
     def get(self, id: str) -> Transform:
         resp = self._request("GET", f"/api/transforms/{id}")
@@ -84,6 +94,11 @@ class AsyncTransforms(AsyncResource):
             self._transport, "/api/transforms", params, Transform,
             data_key="transforms",
         )
+
+    async def engines(self) -> TransformEnginesResponse:
+        """List the supported transform languages. See `Transforms.engines`."""
+        resp = await self._request("GET", "/api/transforms/engines")
+        return self._parse(TransformEnginesResponse, resp)
 
     async def get(self, id: str) -> Transform:
         resp = await self._request("GET", f"/api/transforms/{id}")

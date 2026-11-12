@@ -701,3 +701,58 @@ def test_transform_type_covers_api_engines_and_not_mapping():
     assert set(get_args(get_args(TransformType)[0])) == {
         "jsonata", "javascript", "typescript", "liquid", "xslt", "jmespath", "jsonlogic", "jq",
     }
+
+
+# --------------------------------------------------------------------------- transform engines
+
+# GET /api/transforms/engines (api/src/routes/transforms.ts), trimmed to two languages.
+ENGINES = {
+    "engines": [
+        {"type": "jsonata", "label": "JSONata",
+         "description": "Query and transformation language for JSON.",
+         "fileExtension": "jsonata", "starterCode": "{\n  \"id\": id\n}",
+         "aiGenerate": True, "available": True},
+        {"type": "jq", "label": "jq", "description": "Command-line JSON processor.",
+         "fileExtension": "jq", "starterCode": "{ id: .id }",
+         "aiGenerate": False, "available": False},
+    ],
+    "contentFormats": ["json", "xml", "text"],
+}
+
+
+def test_transform_engines(mock_api, client):
+    from hookbase.models import TransformEngine, TransformEnginesResponse
+
+    route = mock_api.get("/api/transforms/engines").mock(
+        return_value=httpx.Response(200, json=ENGINES)
+    )
+    result = client.transforms.engines()
+    assert route.called
+    assert isinstance(result, TransformEnginesResponse)
+    jsonata, jq = result.engines
+    assert isinstance(jsonata, TransformEngine)
+    assert (jsonata.type, jsonata.label) == ("jsonata", "JSONata")
+    assert jsonata.file_extension == "jsonata"
+    assert jsonata.starter_code.startswith("{")
+    assert (jsonata.ai_generate, jsonata.available) == (True, True)
+    # jq needs transform isolation; this deployment has it off.
+    assert (jq.ai_generate, jq.available) == (False, False)
+    assert result.content_formats == ["json", "xml", "text"]
+
+
+def test_transform_engines_accepts_a_language_added_later(mock_api, client):
+    mock_api.get("/api/transforms/engines").mock(return_value=httpx.Response(200, json={
+        "engines": [{"type": "cel", "label": "CEL", "description": "", "fileExtension": "cel",
+                     "starterCode": "", "aiGenerate": False, "available": True}],
+        "contentFormats": ["json", "yaml"],
+    }))
+    result = client.transforms.engines()
+    assert result.engines[0].type == "cel"
+    assert result.content_formats == ["json", "yaml"]
+
+
+async def test_async_transform_engines(mock_api, async_client):
+    mock_api.get("/api/transforms/engines").mock(return_value=httpx.Response(200, json=ENGINES))
+    result = await async_client.transforms.engines()
+    assert [e.type for e in result.engines] == ["jsonata", "jq"]
+    assert result.engines[1].available is False
