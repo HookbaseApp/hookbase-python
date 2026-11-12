@@ -93,6 +93,10 @@ class Source(HookbaseModel):
     slug: str
     #: Any string; see KNOWN_SOURCE_PROVIDERS. Never validated client-side.
     provider: SourceProvider | None = None
+    #: The provider-catalog entry (client.providers.get) the source was made from, or None. It can
+    #: differ from ``provider``: a catalog entry with no verifier of its own saves as Custom HMAC.
+    #: Set on create only.
+    catalog_provider: str | None = None
     description: str | None = None
     #: Whether a signing secret is set. The secret itself is not returned here.
     has_signing_secret: bool = False
@@ -209,6 +213,12 @@ class CreateSourceParams(HookbaseModel):
     #: Required: it forms the ingest URL, /ingest/<org>/<slug>, and cannot be changed later.
     slug: str
     provider: SourceProvider | None = None
+    #: The provider-catalog entry id (client.providers.list) this source is made from. Set it when
+    #: creating from a catalog entry, above all one with no verifier of its own that saves as
+    #: Custom HMAC: its sender is still the vendor, whose addresses every customer shares, so the
+    #: API then does not count the source's IP allowlist as verifying the sender for a bridge
+    #: destination. An id not in the catalog is a 400. Create only: no update changes it.
+    catalog_provider: str | None = None
     description: str | None = None
     #: What to supply depends on the provider (the catalog's signatureVerification.secretSource,
     #: see client.providers.get):

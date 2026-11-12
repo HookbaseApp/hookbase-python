@@ -32,9 +32,11 @@ CREATE_FIELDS = {
     "rejectInvalidSignatures", "rateLimitPerMinute", "ipFilterMode", "ipAllowlist",
     "ipDenylist", "encryptFields", "maskFields", "dedupEnabled", "dedupStrategy",
     "dedupWindowHours", "dedupCustomHeader", "transientMode", "allowedMethods",
+    "catalogProvider",
 }
 
-UPDATE_FIELDS = (CREATE_FIELDS - {"slug"}) | {"isActive"}
+# slug and catalogProvider are set once, on create; the strict update schema refuses both.
+UPDATE_FIELDS = (CREATE_FIELDS - {"slug", "catalogProvider"}) | {"isActive"}
 
 
 def _aliases(model: type) -> set[str]:
@@ -51,10 +53,16 @@ def test_update_params_send_exactly_the_accepted_fields() -> None:
     assert _aliases(UpdateSourceParams) == UPDATE_FIELDS
 
 
-def test_create_and_update_differ_only_by_slug_and_is_active() -> None:
+def test_create_and_update_differ_only_by_slug_catalog_provider_and_is_active() -> None:
     create, update = _aliases(CreateSourceParams), _aliases(UpdateSourceParams)
-    assert create - update == {"slug"}
+    assert create - update == {"slug", "catalogProvider"}
     assert update - create == {"isActive"}
+
+
+def test_catalog_provider_cannot_be_cleared() -> None:
+    assert "catalogProvider" not in CLEARABLE_SOURCE_FIELDS
+    with pytest.raises(HookbaseError, match="not one of"):
+        update_source_body({"clear": ["catalogProvider"]})
 
 
 def test_slug_is_required_on_create() -> None:
@@ -84,6 +92,7 @@ def test_a_full_create_serializes_every_field_under_its_wire_name() -> None:
         dedup_custom_header="X-Idempotency-Key",
         transient_mode=False,
         allowed_methods=["POST"],
+        catalog_provider="stripe",
     )
     assert set(params.model_dump(by_alias=True, exclude_none=True)) == CREATE_FIELDS
 
