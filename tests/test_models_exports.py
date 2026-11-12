@@ -42,3 +42,15 @@ def test_portal_token_params_exported():
 def test_all_entries_resolve():
     for name in models.__all__:
         assert hasattr(models, name), name
+
+
+def test_models_added_in_4_2_are_exported():
+    import hookbase.models as m
+
+    added = [
+        "BridgeConfig", "BridgeEventTypeSource", "DestinationSecret", "DestinationWithSecret",
+        "TransformEngine", "TransformEnginesResponse", "OutboundMessageBridge",
+        "EventDebugDelivery", "EventDebugDestination", "EventDebugPatternHint",
+        "EventDebugRouteCircuit",
+    ]
+    assert [name for name in added if name not in m.__all__ or not hasattr(m, name)] == []

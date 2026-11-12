@@ -107,23 +107,64 @@ for p in client.providers.list(category="payments").providers:
     print(p.hookbase_provider, p.signature_verification and p.signature_verification.secret_source)
 client.providers.get("stripe").signature_verification
 
+# Record the catalog entry a source is made from (create only). Entries with no verifier of
+# their own, such as Salesforce, save as Custom HMAC:
+client.sources.create({"name": "Salesforce", "slug": "salesforce", "provider": "custom",
+                       "catalogProvider": "salesforce"})
+
 # Destinations
 client.destinations.list()
-client.destinations.create({"name": "Backend", "url": "https://..."})
+dest = client.destinations.create({"name": "Backend", "url": "https://..."})
 client.destinations.test("dst_id")
+
+# HTTP destinations sign every delivery (Standard Webhooks headers), so the receiver can check
+# it with Webhook(secret).verify(). The secret is returned once by create:
+print(dest.signing_secret)                      # whsec_...; dest.has_signing_secret is True
+client.destinations.reveal_secret("dst_id").signing_secret
+rotated = client.destinations.rotate_secret("dst_id", grace_period_seconds=3600)
+rotated.previous_secret_expires_at              # until then the old secret signs too
+
+# Bridge destinations publish each delivery they receive as an outbound event
+from hookbase.models import BridgeConfig, CreateDestinationParams
+
+bridge = client.destinations.create(CreateDestinationParams(
+    name="Orders to customers",
+    type="bridge",
+    config=BridgeConfig(event_type_source="field", event_type_field="type",
+                        event_type_prefix="order."),
+))
+# A bridge's test is a dry run: nothing is published
+result = client.destinations.test(bridge.id, payload={"type": "created"})
+result.event_type, result.event_type_exists, result.matching_endpoints
 
 # Routes
 client.routes.create({"name": "Route", "sourceId": "src_id", "destinationId": "dst_id"})
 client.routes.get_circuit_status("route_id")
 client.routes.reset_circuit("route_id")
 
+# While a route's circuit is open its deliveries are held (status "held", hold_expires_at set)
+# and go out when it closes. hold_on_circuit_open=False fails them instead.
+client.routes.update("route_id", {"holdOnCircuitOpen": False})
+client.routes.get("route_id").held_count  # get only; held_count_capped past 10,000
+
 # Events & Deliveries
 client.events.list(source_id="src_id", from_date="2024-01-01")  # id or slug; unknown -> 404
 client.events.get("evt_id")  # Includes payload and deliveries
+client.events.debug("evt_id").curl_command  # plus typed deliveries, pattern hints, circuit state
 client.deliveries.replay("del_id")
 client.deliveries.bulk_replay(["del_1", "del_2"])
 
+# Replay with edits. payload_patch is an RFC 7386 merge patch on the stored payload (None
+# removes a key), so it works on sources that mask fields; modified_payload replaces it.
+client.deliveries.replay(
+    "del_id",
+    payload_patch={"amount": 10, "coupon": None},
+    destination_override="backup-destination",   # id or slug
+    headers_override={"X-Replay": "1"},
+)
+
 # Transforms & Filters
+client.transforms.engines()  # languages this deployment runs, and which are available
 client.transforms.create({"name": "Extract", "transformType": "jsonata", "code": "$.data"})
 client.transforms.test(code="$.data", payload={"data": {"key": "value"}})  # .result
 client.filters.test(
@@ -151,18 +192,26 @@ client.outbound.endpoints.rotate_secret("ep_id", grace_period=3600)
 # this". Name the setting in `clear` to send an explicit null for it:
 client.outbound.endpoints.update("ep_id", {"clear": ["retryDelays"]})
 
+# While an endpoint's circuit is open its messages are held (status "held") and go out when it
+# recovers; hold_on_circuit_open=False dead-letters them instead. FIFO endpoints never hold.
+client.outbound.endpoints.update("ep_id", {"holdOnCircuitOpen": False})
+client.outbound.endpoints.get("ep_id").held_count
+
 # Event Types & Subscriptions
 client.outbound.event_types.create({"name": "order.created", "category": "orders"})
 client.outbound.subscriptions.create({"endpointId": "ep_id", "eventTypeId": "et_id"})
 client.outbound.subscriptions.bulk_create("ep_id", ["et_1", "et_2"])
 
 # Send Events
-client.outbound.messages.send("app_id", event_type="order.created", payload={"orderId": "ord_1"})
+sent = client.outbound.messages.send("app_id", event_type="order.created",
+                                     payload={"orderId": "ord_1"})
+sent.messages_held  # of messages_queued, those held behind an open circuit (None if none)
 
 # Message Log
-client.outbound.message_log.list(application_id="app_id")
+client.outbound.message_log.list(application_id="app_id", status="held")  # .hold_expires_at
+client.outbound.message_log.get("msg_id").bridge  # set when a bridge destination published it
 client.outbound.message_log.list_attempts("msg_id")
-client.outbound.message_log.stats()
+client.outbound.message_log.stats()  # .held among the counts
 
 # Dead Letter Queue
 client.outbound.dlq.list()
@@ -346,6 +395,33 @@ source = client.sources.create({"name": "GitHub", "slug": "github", "provider": 
 # `provider` is any string (hookbase.models.KNOWN_SOURCE_PROVIDERS lists today's values), so a
 # source with a provider newer than this package still parses.
 ```
+
+## Upgrading to 4.2
+
+- **Fix:** `destinations.list()` and `get()` raised a `ValidationError` when the organization had
+  a destination of a type other than `http`, `s3`, `r2`, `gcs` or `azure_blob` (`sqs`,
+  `eventbridge`, `servicebus`, `pubsub`, `oci_queue`, `bridge`). `DestinationType`,
+  `TransformType` and `ContentFormat` now accept any string, as `MessageStatus` does, so types
+  added later parse too. `"form"`, which the API never accepted, is gone from `ContentFormat`.
+- **Fix:** `events.debug()` returned an empty `curl_command`, `event.headers` and
+  `event.payload`; they are filled in now. Its `deliveries` are typed (`EventDebugDelivery`).
+- `destinations.create()` returns a `DestinationWithSecret`, whose `signing_secret` is the only
+  time the secret is returned; afterwards use `reveal_secret()`. `rotate_secret()` takes
+  `grace_period_seconds`. `Destination.has_signing_secret` says whether deliveries are signed.
+- Bridge destinations: `BridgeConfig` for `config`, `Destination.bridge_config` to read it,
+  `destinations.test(id, payload=...)` for a dry run, and the dry-run fields on `TestResult`.
+- `deliveries.replay()` takes `modified_payload`, `payload_patch`, `destination_override`,
+  `transform_override`, `headers_override` and `persist_transform`; `ReplayResult` reports what
+  changed. Passing both payload edits raises `ValueError`.
+- Holds: the `held` status on deliveries and outbound messages, with `hold_expires_at`;
+  `hold_on_circuit_open`, `held_count` and `held_count_capped` on routes and webhook endpoints;
+  `messages_held` on `SendEventResponse` and `held` on `StatsSummary`. `MessageStatus` also
+  gains `awaiting_pull` and `fifo_waiting`.
+- `transforms.engines()` lists the transform languages the deployment runs.
+- `catalog_provider` on sources (set on create only).
+- `sources.export()` returns a raw dict, and the API now sends its `ipAllowlist`, `ipDenylist`,
+  `encryptFields` and `maskFields` as JSON arrays; they used to be JSON-encoded strings. Code
+  that calls `json.loads` on them must stop. The `Source` model already read either form.
 
 ## Upgrading to 4.1
 
