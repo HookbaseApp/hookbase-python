@@ -118,8 +118,9 @@ dest = client.destinations.create({"name": "Backend", "url": "https://..."})
 client.destinations.test("dst_id")
 
 # HTTP destinations sign every delivery (Standard Webhooks headers), so the receiver can check
-# it with Webhook(secret).verify(). The secret is returned once by create:
-print(dest.signing_secret)                      # whsec_...; dest.has_signing_secret is True
+# it with Webhook(secret).verify(). Create returns the secret once: put it in your secret store.
+# repr() and str() leave it out, so logging the destination doesn't leak it.
+signing_secret = dest.signing_secret            # whsec_...; dest.has_signing_secret is True
 client.destinations.reveal_secret("dst_id").signing_secret
 rotated = client.destinations.rotate_secret("dst_id", grace_period_seconds=3600)
 rotated.previous_secret_expires_at              # until then the old secret signs too
@@ -143,7 +144,8 @@ client.routes.get_circuit_status("route_id")
 client.routes.reset_circuit("route_id")
 
 # While a route's circuit is open its deliveries are held (status "held", hold_expires_at set)
-# and go out when it closes. hold_on_circuit_open=False fails them instead.
+# and go out when it closes. hold_on_circuit_open=False dead-letters them as soon as the circuit
+# opens instead.
 client.routes.update("route_id", {"holdOnCircuitOpen": False})
 client.routes.get("route_id").held_count  # get only; held_count_capped past 10,000
 
@@ -155,7 +157,8 @@ client.deliveries.replay("del_id")
 client.deliveries.bulk_replay(["del_1", "del_2"])
 
 # Replay with edits. payload_patch is an RFC 7386 merge patch on the stored payload (None
-# removes a key), so it works on sources that mask fields; modified_payload replaces it.
+# removes a key), so it works on sources that mask fields; modified_payload replaces it. An
+# argument left as None is not sent.
 client.deliveries.replay(
     "del_id",
     payload_patch={"amount": 10, "coupon": None},
@@ -412,7 +415,9 @@ source = client.sources.create({"name": "GitHub", "slug": "github", "provider": 
   `destinations.test(id, payload=...)` for a dry run, and the dry-run fields on `TestResult`.
 - `deliveries.replay()` takes `modified_payload`, `payload_patch`, `destination_override`,
   `transform_override`, `headers_override` and `persist_transform`; `ReplayResult` reports what
-  changed. Passing both payload edits raises `ValueError`.
+  changed. Passing both payload edits raises `ValueError`. An argument left as None is not sent,
+  so `modified_payload` can be any JSON value but null. The same goes for `payload` on
+  `destinations.test()`.
 - Holds: the `held` status on deliveries and outbound messages, with `hold_expires_at`;
   `hold_on_circuit_open`, `held_count` and `held_count_capped` on routes and webhook endpoints;
   `messages_held` on `SendEventResponse` and `held` on `StatsSummary`. `MessageStatus` also
@@ -422,6 +427,17 @@ source = client.sources.create({"name": "GitHub", "slug": "github", "provider": 
 - `sources.export()` returns a raw dict, and the API now sends its `ipAllowlist`, `ipDenylist`,
   `encryptFields` and `maskFields` as JSON arrays; they used to be JSON-encoded strings. Code
   that calls `json.loads` on them must stop. The `Source` model already read either form.
+- Secrets no longer appear in `repr()` or `str()` of `DestinationWithSecret`,
+  `DestinationSecret`, `SourceWithSecret`, `PendingVerification`, `WebhookEndpoint`,
+  `EndpointWithSecret`, `RotateSecretResult`, `ApiKeyWithSecret`, `Tunnel`, `TunnelToken` or
+  `PortalToken`. A `pydantic.ValidationError` raised while parsing one of them leaves out the
+  response it was given. Read the secret from its attribute (`dest.signing_secret`).
+- **Typing:** `CreateDestinationParams.config` and `UpdateDestinationParams.config` are now
+  `dict[str, Any] | BridgeConfig | None`, so `params.config["bucket"]` no longer type-checks
+  until you narrow it with `isinstance(params.config, dict)`. Because `DestinationType`,
+  `TransformType` and `ContentFormat` now include `str`, mypy reads `Destination.type`,
+  `Transform.transform_type`, `input_format` and `output_format` as plain `str`. An exhaustive
+  `match` or `assert_never` over their literals no longer type-checks.
 
 ## Upgrading to 4.1
 

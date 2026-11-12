@@ -689,6 +689,19 @@ def test_test_destination_without_payload_sends_no_body(mock_api, client):
     # Not a bridge: the dry-run fields are absent.
     assert result.dry_run is None
     assert result.event_type_exists is None
+    # None is no payload too: a bridge answers 400 to payload null.
+    client.destinations.test("dst_1", payload=None)
+    assert route.calls.last.request.content == b""
+
+
+async def test_async_test_destination_with_payload_none_sends_no_body(mock_api, async_client):
+    route = mock_api.post("/api/destinations/dst_br/test").respond(200, json={
+        "success": True, "dryRun": True, "eventType": "order.created",
+        "eventTypeExists": True, "matchingEndpoints": 0,
+    })
+    result = await async_client.destinations.test("dst_br", payload=None)
+    assert route.calls.last.request.content == b""
+    assert result.dry_run is True
 
 
 async def test_async_test_bridge_destination(mock_api):

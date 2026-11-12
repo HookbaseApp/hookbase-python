@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 from typing import Any, Literal, Union
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from . import _wire
-from ._base import HookbaseModel
+from ._base import SECRET_MODEL_CONFIG, HookbaseModel
 
 HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
 AuthType = Literal["none", "basic", "bearer", "api_key", "custom_header"]
@@ -250,7 +250,9 @@ class Destination(HookbaseModel):
 class DestinationWithSecret(Destination):
     """What `destinations.create` returns: the destination plus its signing secret, this once."""
 
-    signing_secret: str | None = None
+    model_config = SECRET_MODEL_CONFIG
+
+    signing_secret: str | None = Field(default=None, repr=False)
     """The full signing secret of a new HTTP destination; save it now. Every delivery carries a
     Standard Webhooks `webhook-signature` made with it, which `Webhook(signing_secret).verify()`
     checks. None for queue, storage and bridge destinations, which are not signed."""
@@ -259,7 +261,9 @@ class DestinationWithSecret(Destination):
 class DestinationSecret(HookbaseModel):
     """The result of `destinations.reveal_secret` and `destinations.rotate_secret`."""
 
-    signing_secret: str = ""
+    model_config = SECRET_MODEL_CONFIG
+
+    signing_secret: str = Field(default="", repr=False)
     """The current signing secret, in full."""
     previous_secret_expires_at: str | None = None
     """Until when deliveries are also signed with the previous secret, after a rotation with a

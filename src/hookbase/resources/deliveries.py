@@ -3,7 +3,6 @@ from __future__ import annotations
 import builtins
 from typing import Any
 
-from .._constants import NOT_GIVEN, NotGiven
 from .._pagination import (
     AsyncLimitOffsetPage,
     SyncLimitOffsetPage,
@@ -16,19 +15,19 @@ from ._base import AsyncResource, SyncResource
 
 def _replay_body(
     *,
-    modified_payload: Any | NotGiven,
-    payload_patch: dict[str, Any] | NotGiven,
-    destination_override: str | NotGiven,
-    transform_override: dict[str, Any] | NotGiven,
-    headers_override: dict[str, str] | NotGiven,
-    persist_transform: bool | NotGiven,
+    modified_payload: Any | None,
+    payload_patch: dict[str, Any] | None,
+    destination_override: str | None,
+    transform_override: dict[str, Any] | None,
+    headers_override: dict[str, str] | None,
+    persist_transform: bool | None,
 ) -> dict[str, Any] | None:
     """Build the replay body from the arguments given. None, the API's plain replay, if none is.
 
-    NOT_GIVEN rather than None marks an argument as absent, because `modified_payload=None`
-    replays with a JSON null payload.
+    None leaves an argument out. The API takes any value that is present as an edit, so sending
+    `modifiedPayload: null` would replay a literal JSON null instead of the stored payload.
     """
-    if not isinstance(modified_payload, NotGiven) and not isinstance(payload_patch, NotGiven):
+    if modified_payload is not None and payload_patch is not None:
         # The API answers 400 PAYLOAD_EDIT_AMBIGUOUS; fail before the request.
         raise ValueError("Pass modified_payload or payload_patch, not both")
     fields = {
@@ -39,7 +38,7 @@ def _replay_body(
         "headersOverride": headers_override,
         "persistTransform": persist_transform,
     }
-    body = {k: v for k, v in fields.items() if not isinstance(v, NotGiven)}
+    body = {k: v for k, v in fields.items() if v is not None}
     return body or None
 
 
@@ -59,7 +58,8 @@ class Deliveries(SyncResource):
         ``limit`` defaults to 50 and is capped at 100 by the API. The response has
         no total; ``auto_paging_iter()`` keeps fetching until a page comes back short.
         ``status`` is one of pending, delivered, failed, failed_over, schema_failed,
-        throttled, awaiting_retry or held.
+        throttled, awaiting_retry or held. ``status="pending"`` also returns awaiting_retry
+        and held rows, since all three are still waiting to be delivered.
         """
         params = self._clean_params({
             "limit": limit, "offset": offset, "eventId": event_id,
@@ -77,18 +77,21 @@ class Deliveries(SyncResource):
         self,
         id: str,
         *,
-        modified_payload: Any | NotGiven = NOT_GIVEN,
-        payload_patch: dict[str, Any] | NotGiven = NOT_GIVEN,
-        destination_override: str | NotGiven = NOT_GIVEN,
-        transform_override: dict[str, Any] | NotGiven = NOT_GIVEN,
-        headers_override: dict[str, str] | NotGiven = NOT_GIVEN,
-        persist_transform: bool | NotGiven = NOT_GIVEN,
+        modified_payload: Any | None = None,
+        payload_patch: dict[str, Any] | None = None,
+        destination_override: str | None = None,
+        transform_override: dict[str, Any] | None = None,
+        headers_override: dict[str, str] | None = None,
+        persist_transform: bool | None = None,
     ) -> ReplayResult:
         """Replay a delivery as a new delivery, optionally edited. With no arguments the request
         has no body and the stored payload goes to the same destination.
 
+        Every argument defaults to None, which leaves it out of the request.
+
         Args:
-            modified_payload: Replaces the stored payload (any JSON value).
+            modified_payload: Replaces the stored payload. Any JSON value but null, which None
+                can't send.
             payload_patch: An RFC 7386 JSON merge patch applied to the *stored* payload: keys
                 set to None are removed, the rest replace or add. Use it for a source that masks
                 or encrypts fields, since you only see the masked view; it may not touch an
@@ -136,7 +139,8 @@ class AsyncDeliveries(AsyncResource):
         ``limit`` defaults to 50 and is capped at 100 by the API. The response has
         no total; ``auto_paging_iter()`` keeps fetching until a page comes back short.
         ``status`` is one of pending, delivered, failed, failed_over, schema_failed,
-        throttled, awaiting_retry or held.
+        throttled, awaiting_retry or held. ``status="pending"`` also returns awaiting_retry
+        and held rows, since all three are still waiting to be delivered.
         """
         params = self._clean_params({
             "limit": limit, "offset": offset, "eventId": event_id,
@@ -154,12 +158,12 @@ class AsyncDeliveries(AsyncResource):
         self,
         id: str,
         *,
-        modified_payload: Any | NotGiven = NOT_GIVEN,
-        payload_patch: dict[str, Any] | NotGiven = NOT_GIVEN,
-        destination_override: str | NotGiven = NOT_GIVEN,
-        transform_override: dict[str, Any] | NotGiven = NOT_GIVEN,
-        headers_override: dict[str, str] | NotGiven = NOT_GIVEN,
-        persist_transform: bool | NotGiven = NOT_GIVEN,
+        modified_payload: Any | None = None,
+        payload_patch: dict[str, Any] | None = None,
+        destination_override: str | None = None,
+        transform_override: dict[str, Any] | None = None,
+        headers_override: dict[str, str] | None = None,
+        persist_transform: bool | None = None,
     ) -> ReplayResult:
         """Replay a delivery as a new delivery, optionally edited. See `Deliveries.replay`."""
         body = _replay_body(

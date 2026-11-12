@@ -3,7 +3,6 @@ from __future__ import annotations
 import builtins
 from typing import Any
 
-from .._constants import NOT_GIVEN, NotGiven
 from .._pagination import (
     AsyncOffsetPage,
     SyncOffsetPage,
@@ -31,9 +30,10 @@ def _rotate_body(grace_period_seconds: int | None) -> dict[str, Any] | None:
     return {"gracePeriodSeconds": grace_period_seconds}
 
 
-def _test_body(payload: dict[str, Any] | NotGiven) -> dict[str, Any] | None:
-    """Only a bridge reads a body here: `payload` is the sample its dry run resolves."""
-    if isinstance(payload, NotGiven):
+def _test_body(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Only a bridge reads a body here: `payload` is the sample its dry run resolves. None sends
+    no body, since a bridge answers 400 to `payload: null`."""
+    if payload is None:
         return None
     return {"payload": payload}
 
@@ -95,13 +95,13 @@ class Destinations(SyncResource):
         return self._parse(DestinationSecret, resp)
 
     def test(
-        self, id: str, *, payload: dict[str, Any] | NotGiven = NOT_GIVEN,
+        self, id: str, *, payload: dict[str, Any] | None = None,
     ) -> TestResult:
         """Send a test delivery to the destination.
 
         For a bridge destination this is a dry run that publishes nothing: it resolves the event
-        type from `payload` (a JSON object; the API's test payload when omitted) and reports it
-        in `event_type`, `event_type_exists` and `matching_endpoints`. Other types ignore
+        type from `payload` (a JSON object; the API's test payload when it is None) and reports
+        it in `event_type`, `event_type_exists` and `matching_endpoints`. Other types ignore
         `payload`.
         """
         resp = self._request("POST", f"/api/destinations/{id}/test", json=_test_body(payload))
@@ -180,7 +180,7 @@ class AsyncDestinations(AsyncResource):
         return self._parse(DestinationSecret, resp)
 
     async def test(
-        self, id: str, *, payload: dict[str, Any] | NotGiven = NOT_GIVEN,
+        self, id: str, *, payload: dict[str, Any] | None = None,
     ) -> TestResult:
         """Send a test delivery, or dry-run a bridge. See `Destinations.test`."""
         resp = await self._request(

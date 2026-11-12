@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import inspect
 import json
+import re
 from typing import Any, Callable
 
 import httpx
 import pytest
 
 from hookbase import AsyncHookbase, Hookbase
+from hookbase.resources._base import AsyncResource, SyncResource
 
 from ..conftest import TEST_API_KEY
 
@@ -503,3 +505,58 @@ def test_export_ids_are_comma_joined(mock_api):
     with Hookbase(api_key=TEST_API_KEY) as client:
         client.routes.export(ids=["rte_1", "rte_2"])
     assert dict(route.calls.last.request.url.params) == {"ids": "rte_1,rte_2"}
+
+
+def _resources(client: Any, prefix: str = "") -> dict[str, Any]:
+    """Every resource on a client by its attribute path, outbound.* included."""
+    found: dict[str, Any] = {}
+    for name in dir(client):
+        if name.startswith("_"):
+            continue
+        value = getattr(client, name)
+        if isinstance(value, (SyncResource, AsyncResource)):
+            found[prefix + name] = value
+        elif name == "outbound":
+            found.update(_resources(value, "outbound."))
+    return found
+
+
+def _methods(resource: Any) -> dict[str, Any]:
+    return {name: fn for name, fn in inspect.getmembers(type(resource), inspect.isfunction)
+            if not name.startswith("_")}
+
+
+def _parameters(fn: Any) -> list[tuple[str, Any, Any, Any]]:
+    return [(p.name, p.kind, p.default, p.annotation)
+            for p in inspect.signature(fn).parameters.values()]
+
+
+def _unprefixed(annotation: Any) -> str:
+    """SyncCursorPage[X] and AsyncCursorPage[X] both as CursorPage[X]."""
+    return re.sub(r"\b(Sync|Async)", "", str(annotation))
+
+
+async def test_async_resources_have_the_sync_signatures():
+    # The cases above only cover the calls they list. This catches an argument, default or
+    # method added to one client and not the other.
+    with Hookbase(api_key=TEST_API_KEY) as sync_client:
+        sync_resources = _resources(sync_client)
+    async with AsyncHookbase(api_key=TEST_API_KEY) as async_client:
+        async_resources = _resources(async_client)
+    assert sorted(async_resources) == sorted(sync_resources)
+    assert "outbound.endpoints" in sync_resources
+
+    checked = 0
+    for path, sync_resource in sync_resources.items():
+        sync_methods = _methods(sync_resource)
+        async_methods = _methods(async_resources[path])
+        assert sorted(async_methods) == sorted(sync_methods), path
+        for name, sync_fn in sync_methods.items():
+            async_fn = async_methods[name]
+            where = f"{path}.{name}"
+            assert inspect.iscoroutinefunction(async_fn), where
+            assert _parameters(async_fn) == _parameters(sync_fn), where
+            assert _unprefixed(inspect.signature(async_fn).return_annotation) == _unprefixed(
+                inspect.signature(sync_fn).return_annotation), where
+            checked += 1
+    assert checked > 100

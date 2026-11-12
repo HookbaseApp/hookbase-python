@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
-from ._base import HookbaseModel
+from ._base import SECRET_MODEL_CONFIG, HookbaseModel
 
 
 class Tunnel(HookbaseModel):
+    model_config = SECRET_MODEL_CONFIG
+
     id: str
     organization_id: str = ""
     name: str
@@ -25,9 +27,9 @@ class Tunnel(HookbaseModel):
     last_request_at: str | None = None
     tunnel_url: str | None = None
     """Public URL. Only ``tunnels.create()`` returns it."""
-    ws_url: str | None = None
+    ws_url: str | None = Field(default=None, repr=False)
     """WebSocket URL the CLI connects to, with the token in it. Only on create/regenerate."""
-    auth_token: str | None = None
+    auth_token: str | None = Field(default=None, repr=False)
     """The tunnel's auth token in full. Only ``create()`` returns it, once; it is not stored."""
     created_at: str = ""
     updated_at: str = ""
@@ -63,5 +65,7 @@ class UpdateTunnelParams(HookbaseModel):
 class TunnelToken(HookbaseModel):
     """``tunnels.regenerate_token()``: the new token, shown once, and the URL that uses it."""
 
-    auth_token: str
-    ws_url: str | None = None
+    model_config = SECRET_MODEL_CONFIG
+
+    auth_token: str = Field(repr=False)
+    ws_url: str | None = Field(default=None, repr=False)

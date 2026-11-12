@@ -7,6 +7,8 @@ the wire fails here rather than coming back empty.
 
 from __future__ import annotations
 
+from typing import Any
+
 import httpx
 import pytest
 
@@ -530,12 +532,36 @@ def test_replay_with_every_override(mock_api, client):
     assert result.target_destination_id == "dst_9"
 
 
-@pytest.mark.parametrize("payload", [None, [], "text", 0])
+@pytest.mark.parametrize("payload", [[], "text", 0, False, {}])
 def test_replay_sends_any_modified_payload_value(mock_api, client, payload):
-    # None means "replay with a JSON null payload", not "argument left out".
     route = mock_api.post("/api/deliveries/del_1/replay").respond(200, json=REPLAY)
     client.deliveries.replay("del_1", modified_payload=payload)
     assert sent_body(route) == {"modifiedPayload": payload}
+
+
+NO_EDITS: dict[str, Any] = dict.fromkeys([
+    "modified_payload", "payload_patch", "destination_override", "transform_override",
+    "headers_override", "persist_transform",
+])
+
+
+def test_replay_leaves_out_none_arguments(mock_api, client):
+    # The API takes any value that is present as an edit: modifiedPayload null would replay a
+    # literal null.
+    route = mock_api.post("/api/deliveries/del_1/replay").respond(200, json=REPLAY)
+    client.deliveries.replay("del_1", **NO_EDITS)
+    assert route.calls.last.request.content == b""
+    # None doesn't count as the second payload edit either.
+    client.deliveries.replay("del_1", modified_payload=None, payload_patch={"a": 1})
+    assert sent_body(route) == {"payloadPatch": {"a": 1}}
+
+
+async def test_async_replay_leaves_out_none_arguments(mock_api, async_client):
+    route = mock_api.post("/api/deliveries/del_1/replay").respond(200, json=REPLAY)
+    await async_client.deliveries.replay("del_1", **NO_EDITS)
+    assert route.calls.last.request.content == b""
+    await async_client.deliveries.replay("del_1", modified_payload={"a": 1}, payload_patch=None)
+    assert sent_body(route) == {"modifiedPayload": {"a": 1}}
 
 
 def test_replay_with_both_payload_edits_raises_before_the_request(mock_api, client):

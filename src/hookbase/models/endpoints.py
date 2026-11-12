@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Literal, Union
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from . import _wire
-from ._base import HookbaseModel
+from ._base import SECRET_MODEL_CONFIG, HookbaseModel
 
 CircuitState = Literal["closed", "open", "half_open"]
 BackoffType = Literal["exponential", "linear", "fixed"]
@@ -64,7 +64,7 @@ class WebhookEndpoint(HookbaseModel):
     application_id: str
     url: str
     description: str | None = None
-    secret: str = ""
+    secret: str = Field(default="", repr=False)
     """The full signing secret. Populated by `create` alone; save it then,
     because no later response repeats it."""
     secret_prefix: str = ""
@@ -181,7 +181,9 @@ class WebhookEndpoint(HookbaseModel):
 
 
 class EndpointWithSecret(WebhookEndpoint):
-    secret: str = ""
+    model_config = SECRET_MODEL_CONFIG
+
+    secret: str = Field(default="", repr=False)
 
 
 class CreateEndpointParams(HookbaseModel):
@@ -303,7 +305,9 @@ class EndpointStats(HookbaseModel):
 class RotateSecretResult(HookbaseModel):
     """The result of `POST /api/webhook-endpoints/:id/rotate-secret`."""
 
-    secret: str = ""
+    model_config = SECRET_MODEL_CONFIG
+
+    secret: str = Field(default="", repr=False)
     """The new HMAC signing secret. Save it now; no later response repeats it.
     Empty for an Ed25519 endpoint, whose private key is never returned: read
     `public_key` instead."""

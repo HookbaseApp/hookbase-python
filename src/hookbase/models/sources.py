@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from . import _wire
-from ._base import HookbaseModel
+from ._base import SECRET_MODEL_CONFIG, HookbaseModel
 
 # Providers the API accepts for a source today.
 #
@@ -185,13 +185,15 @@ class Source(HookbaseModel):
 class SourceWithSecret(Source):
     """What create() returns: a source plus the one look at its signing secret you get."""
 
+    model_config = SECRET_MODEL_CONFIG
+
     #: The signing secret, in full, this once. None when the source has none to show: the
     #: provider verifies without one (verifies_without_secret), the vendor issues it after
     #: registration (awaiting_signing_secret), or the provider does not sign.
-    signing_secret: str | None = None
+    signing_secret: str | None = Field(default=None, repr=False)
     #: Meta providers (whatsapp) only: the verify token to paste into Meta's webhook setup, in
     #: full, this once. Sources.verify_token reveals it later.
-    verify_token: str | None = None
+    verify_token: str | None = Field(default=None, repr=False)
 
 
 class PendingVerification(HookbaseModel):
@@ -202,8 +204,10 @@ class PendingVerification(HookbaseModel):
     :meth:`Sources.adopt_pending_verification` to make it the source's signing secret.
     """
 
+    model_config = SECRET_MODEL_CONFIG
+
     provider: str
-    token: str
+    token: str = Field(repr=False)
     received_at: str
     client_ip: str | None = None
 

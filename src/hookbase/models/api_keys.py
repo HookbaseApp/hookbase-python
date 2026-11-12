@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
-from ._base import HookbaseModel
+from ._base import SECRET_MODEL_CONFIG, HookbaseModel
 
 
 class ApiKey(HookbaseModel):
@@ -27,7 +27,9 @@ class ApiKey(HookbaseModel):
 
 
 class ApiKeyWithSecret(ApiKey):
-    key: str = ""
+    model_config = SECRET_MODEL_CONFIG
+
+    key: str = Field(default="", repr=False)
 
 
 class CreateApiKeyParams(HookbaseModel):
