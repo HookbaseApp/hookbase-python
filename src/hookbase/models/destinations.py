@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Literal
+from typing import Any, Literal, Union
 
 from pydantic import field_validator, model_validator
 
@@ -10,7 +10,17 @@ from ._base import HookbaseModel
 
 HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
 AuthType = Literal["none", "basic", "bearer", "api_key", "custom_header"]
-DestinationType = Literal["http", "s3", "r2", "gcs", "azure_blob"]
+# Every destination type the API accepts today (DESTINATION_TYPES in
+# api/src/routes/destinations.ts). The field accepts any string, like MessageStatus: when this was a
+# closed Literal, one sqs or bridge destination in an org made destinations.list() and get() raise
+# a ValidationError for the whole call.
+DestinationType = Union[
+    Literal[
+        "http", "sqs", "eventbridge", "servicebus", "pubsub", "oci_queue",
+        "s3", "r2", "gcs", "azure_blob", "bridge",
+    ],
+    str,
+]
 FileFormat = Literal["json", "jsonl"]
 PartitionBy = Literal["date", "hour", "source"]
 FieldMappingType = Literal["string", "number", "boolean", "timestamp", "json"]

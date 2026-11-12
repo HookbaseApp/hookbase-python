@@ -697,6 +697,7 @@ def test_transform_type_covers_api_engines_and_not_mapping():
 
     from hookbase.models.transforms import TransformType
 
-    assert set(get_args(TransformType)) == {
+    # TransformType is Union[Literal[...known...], str]; the Literal holds the known engines.
+    assert set(get_args(get_args(TransformType)[0])) == {
         "jsonata", "javascript", "typescript", "liquid", "xslt", "jmespath", "jsonlogic", "jq",
     }
