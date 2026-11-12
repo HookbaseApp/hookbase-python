@@ -115,6 +115,14 @@ class WebhookEndpoint(HookbaseModel):
     circuit_failure_threshold: int = 0
     circuit_success_threshold: int = 0
     circuit_cooldown_seconds: int = 0
+    hold_on_circuit_open: bool | None = None
+    """Whether messages wait as `held` while the circuit is open, and go out when it closes,
+    instead of being dead-lettered. The API defaults it to true; FIFO and polling endpoints never
+    hold. None when the response doesn't say."""
+    held_count: int | None = None
+    """`get` only: messages to this endpoint held now, counted up to 10,000."""
+    held_count_capped: bool | None = None
+    """`get` only: true when there are more held messages than `held_count` says."""
     total_messages: int = 0
     total_successes: int = 0
     total_failures: int = 0
@@ -193,6 +201,9 @@ class CreateEndpointParams(HookbaseModel):
     circuit_failure_threshold: int | None = None
     circuit_success_threshold: int | None = None
     circuit_cooldown_seconds: int | None = None
+    hold_on_circuit_open: bool | None = None
+    """Hold messages while the circuit is open (the API's default, true) or dead-letter them
+    (false)."""
 
     # Deprecated fields, kept so existing callers keep type-checking and
     # running. See `endpoint_body` for what each one does on the wire.
@@ -229,6 +240,9 @@ class UpdateEndpointParams(HookbaseModel):
     circuit_failure_threshold: int | None = None
     circuit_success_threshold: int | None = None
     circuit_cooldown_seconds: int | None = None
+    hold_on_circuit_open: bool | None = None
+    """Hold messages while the circuit is open (the API's default, true) or dead-letter them
+    (false)."""
 
     clear: list[ClearableEndpointField] | None = None
     """Settings to reset to their defaults.

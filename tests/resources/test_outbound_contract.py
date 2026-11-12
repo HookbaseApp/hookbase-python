@@ -328,7 +328,7 @@ LIST_ITEM = {
 
 @pytest.mark.parametrize("status", [
     "pending", "processing", "success", "failed", "awaiting_retry", "exhausted", "dlq",
-    "some_future_status",
+    "awaiting_pull", "fifo_waiting", "held", "some_future_status",
 ])
 def test_message_list_accepts_every_status(mock_api, client, status):
     mock_api.get("/api/outbound-messages").respond(
@@ -780,3 +780,91 @@ def test_application_update_sends_rate_limits_and_disable(mock_api, client):
         "rateLimitPerMinute": 600, "isDisabled": True, "disabledReason": "paused",
     }
 
+
+
+# --- holds and bridges -------------------------------------------------------
+
+
+def test_message_status_lists_every_known_status():
+    from typing import get_args
+
+    from hookbase.models import MessageStatus
+
+    assert set(get_args(get_args(MessageStatus)[0])) == {
+        "pending", "processing", "success", "failed", "awaiting_retry", "exhausted", "dlq",
+        "awaiting_pull", "fifo_waiting", "held",
+    }
+
+
+def test_held_message_reads_hold_expires_at(mock_api, client):
+    held = {**LIST_ITEM, "status": "held", "holdExpiresAt": "2026-11-12T00:00:00Z"}
+    mock_api.get("/api/outbound-messages").respond(200, json=make_cursor_response([held]))
+    msg = client.outbound.message_log.list(status="held").data[0]
+    assert msg.status == "held"
+    assert msg.hold_expires_at == "2026-11-12T00:00:00Z"
+    assert OutboundMessage.model_validate(LIST_ITEM).hold_expires_at is None
+
+
+def test_message_get_reads_the_bridge_origin(mock_api, client):
+    from hookbase.models import OutboundMessageBridge
+
+    mock_api.get("/api/outbound-messages/om_1").respond(200, json={"data": {
+        **LIST_ITEM, "holdExpiresAt": None,
+        "bridge": {"inboundEventId": "evt_in", "deliveryId": "del_in", "hop": 1},
+    }})
+    msg = client.outbound.message_log.get("om_1")
+    assert isinstance(msg.bridge, OutboundMessageBridge)
+    assert (msg.bridge.inbound_event_id, msg.bridge.delivery_id, msg.bridge.hop) == (
+        "evt_in", "del_in", 1,
+    )
+
+
+def test_message_get_without_a_bridge(mock_api, client):
+    mock_api.get("/api/outbound-messages/om_1").respond(200, json={"data": {
+        **LIST_ITEM, "bridge": None,
+    }})
+    assert client.outbound.message_log.get("om_1").bridge is None
+
+
+def test_send_reports_held_messages(mock_api, client):
+    mock_api.post("/api/send-event").respond(200, json={"data": {
+        "eventId": "evt_1", "messagesQueued": 3, "endpoints": [], "messagesHeld": 2,
+    }})
+    result = client.outbound.messages.send("app_1", event_type="a.b", payload={})
+    assert (result.messages_queued, result.messages_held) == (3, 2)
+
+
+def test_send_without_held_messages(mock_api, client):
+    # The API leaves messagesHeld out when none were held.
+    mock_api.post("/api/send-event").respond(200, json=SEND_OK)
+    result = client.outbound.messages.send("app_1", event_type="a.b", payload={})
+    assert result.messages_held is None
+
+
+def test_stats_count_held_messages(mock_api, client):
+    mock_api.get("/api/outbound-messages/stats/summary").respond(200, json={"data": {
+        "pending": 1, "processing": 0, "success": 5, "failed": 0, "awaitingRetry": 1,
+        "held": 3, "exhausted": 0, "dlq": 0, "total": 10,
+    }})
+    stats = client.outbound.message_log.stats()
+    assert stats.held == 3
+    assert stats.total == 10
+
+
+async def test_async_holds_and_bridge(mock_api):
+    mock_api.post("/api/send-event").respond(200, json={"data": {
+        "eventId": "evt_1", "messagesQueued": 1, "endpoints": [], "messagesHeld": 1,
+    }})
+    mock_api.get("/api/outbound-messages/om_1").respond(200, json={"data": {
+        **LIST_ITEM, "status": "held", "holdExpiresAt": "2026-11-12T00:00:00Z",
+        "bridge": {"inboundEventId": "evt_in", "deliveryId": None, "hop": None},
+    }})
+    mock_api.get("/api/outbound-messages/stats/summary").respond(200, json={"data": {"held": 1}})
+    async with AsyncHookbase(api_key="whr_test") as c:
+        sent = await c.outbound.messages.send("app_1", event_type="a.b", payload={})
+        msg = await c.outbound.message_log.get("om_1")
+        stats = await c.outbound.message_log.stats()
+    assert sent.messages_held == 1
+    assert msg.hold_expires_at == "2026-11-12T00:00:00Z"
+    assert msg.bridge is not None and msg.bridge.delivery_id is None
+    assert stats.held == 1

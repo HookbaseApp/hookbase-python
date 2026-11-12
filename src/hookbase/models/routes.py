@@ -34,6 +34,13 @@ class Route(HookbaseModel):
     failover_destination_ids: list[str] | None = None
     failover_after_attempts: int | None = None
     expected_response: Any = None
+    hold_on_circuit_open: bool | None = None
+    """Whether deliveries wait as `held` while the circuit is open, and go out when it closes,
+    instead of failing. The API defaults it to true; None when the response doesn't say."""
+    held_count: int | None = None
+    """`get` only: deliveries on this route held now, counted up to 10,000."""
+    held_count_capped: bool | None = None
+    """`get` only: true when there are more held deliveries than `held_count` says."""
     created_at: str = ""
     updated_at: str = ""
 
@@ -57,6 +64,10 @@ class CreateRouteParams(HookbaseModel):
     failover_destination_ids: list[str] | None = None
     failover_after_attempts: int | None = None
     expected_response: Any = None
+    hold_on_circuit_open: bool | None = None
+    """Hold deliveries while the circuit is open (the API's default, true) or fail them (false).
+    Turning it off does not touch deliveries already held: the recovery sweep releases them, and
+    they fail on their next attempt if the circuit is still open."""
 
 
 class UpdateRouteParams(HookbaseModel):
@@ -78,6 +89,10 @@ class UpdateRouteParams(HookbaseModel):
     failover_destination_ids: list[str] | None = None
     failover_after_attempts: int | None = None
     expected_response: Any = None
+    hold_on_circuit_open: bool | None = None
+    """Hold deliveries while the circuit is open (the API's default, true) or fail them (false).
+    Turning it off does not touch deliveries already held: the recovery sweep releases them, and
+    they fail on their next attempt if the circuit is still open."""
 
 
 class CircuitStatusInfo(HookbaseModel):
