@@ -358,6 +358,41 @@ CASES.update({
                            lambda r: r == {"data": []}),
 })
 
+BRIDGE = {**DEST, "type": "bridge", "url": "", "config": {"eventTypeSource": "fixed",
+                                                          "eventType": "order.created"}}
+
+# Added for API 2026-11 (4.2.0): destination secrets and bridges, transform engines, replay with
+# edits, holds.
+CASES.update({
+    "destinations.create": (lambda c: c.destinations.create({"name": "D", "slug": "d",
+                                                             "url": "https://x.test"}),
+                            "POST", "/api/destinations",
+                            {"destination": {**DEST, "hasSigningSecret": True,
+                                             "signingSecret": "whsec_d"}},
+                            {"name": "D", "slug": "d", "url": "https://x.test"},
+                            lambda r: r.signing_secret == "whsec_d" and r.has_signing_secret),
+    "destinations.reveal_secret": (lambda c: c.destinations.reveal_secret("dst_1"), "GET",
+                                   "/api/destinations/dst_1/reveal-secret",
+                                   {"signingSecret": "whsec_d", "previousSecretExpiresAt": None},
+                                   None, lambda r: r.signing_secret == "whsec_d"),
+    "destinations.rotate_secret": (lambda c: c.destinations.rotate_secret(
+                                       "dst_1", grace_period_seconds=120),
+                                   "POST", "/api/destinations/dst_1/rotate-secret",
+                                   {"signingSecret": "whsec_e",
+                                    "previousSecretExpiresAt": "2026-11-12T00:02:00Z"},
+                                   {"gracePeriodSeconds": 120},
+                                   lambda r: r.previous_secret_expires_at is not None),
+    "destinations.test(payload)": (lambda c: c.destinations.test("dst_1", payload={"a": 1}),
+                                   "POST", "/api/destinations/dst_1/test",
+                                   {"success": True, "dryRun": True, "eventType": "order.created",
+                                    "eventTypeExists": True, "matchingEndpoints": 3},
+                                   {"payload": {"a": 1}},
+                                   lambda r: r.dry_run is True and r.matching_endpoints == 3),
+    "destinations.get(bridge)": (lambda c: c.destinations.get("dst_1"), "GET",
+                                 "/api/destinations/dst_1", {"destination": BRIDGE}, None,
+                                 lambda r: r.bridge_config.event_type == "order.created"),
+})
+
 
 
 def _sync(client: Hookbase, call: Callable[[Any], Any]) -> Any:
