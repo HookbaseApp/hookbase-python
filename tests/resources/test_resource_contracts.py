@@ -614,6 +614,81 @@ def test_route_expected_response_is_any_json(mock_api, client):
     assert route.expected_response == {"statusCodes": [200, 202], "bodyContains": "ok"}
 
 
+ROUTE = {"id": "rte_1", "name": "R", "sourceId": "src_1", "destinationId": "dst_1"}
+
+
+def test_route_get_reads_the_hold_setting_and_count(mock_api, client):
+    mock_api.get("/api/routes/rte_1").mock(return_value=httpx.Response(200, json={"route": {
+        **ROUTE, "holdOnCircuitOpen": True, "heldCount": 10000, "heldCountCapped": True,
+    }}))
+    route = client.routes.get("rte_1")
+    assert route.hold_on_circuit_open is True
+    assert (route.held_count, route.held_count_capped) == (10000, True)
+
+
+def test_route_list_reads_hold_on_circuit_open(mock_api, client):
+    mock_api.get("/api/routes").mock(return_value=httpx.Response(200, json={
+        "routes": [{**ROUTE, "holdOnCircuitOpen": False}],
+        "pagination": {"total": 1, "page": 1, "pageSize": 20},
+    }))
+    route = client.routes.list().data[0]
+    assert route.hold_on_circuit_open is False
+    # Only GET /api/routes/:id counts held deliveries.
+    assert route.held_count is None
+
+
+@pytest.mark.parametrize("hold", [True, False])
+def test_route_create_and_update_send_hold_on_circuit_open(mock_api, client, hold):
+    from hookbase.models import CreateRouteParams, UpdateRouteParams
+
+    create = mock_api.post("/api/routes").mock(return_value=httpx.Response(200, json={
+        "route": {**ROUTE, "holdOnCircuitOpen": hold},
+    }))
+    update = mock_api.patch("/api/routes/rte_1").mock(
+        return_value=httpx.Response(200, json={"success": True})
+    )
+    created = client.routes.create(CreateRouteParams(
+        name="R", source_id="src_1", destination_id="dst_1", hold_on_circuit_open=hold,
+    ))
+    client.routes.update("rte_1", UpdateRouteParams(hold_on_circuit_open=hold))
+    assert sent_body(create)["holdOnCircuitOpen"] is hold
+    assert sent_body(update) == {"holdOnCircuitOpen": hold}
+    assert created.hold_on_circuit_open is hold
+
+
+def test_route_unset_hold_on_circuit_open_is_not_sent(mock_api, client):
+    # The API answers 400 "holdOnCircuitOpen must be a boolean" to null, so None leaves it out.
+    from hookbase.models import CreateRouteParams, UpdateRouteParams
+
+    create = mock_api.post("/api/routes").mock(
+        return_value=httpx.Response(200, json={"route": ROUTE})
+    )
+    update = mock_api.patch("/api/routes/rte_1").mock(
+        return_value=httpx.Response(200, json={"success": True})
+    )
+    client.routes.create(CreateRouteParams(
+        name="R", source_id="src_1", destination_id="dst_1", hold_on_circuit_open=None,
+    ))
+    client.routes.update("rte_1", UpdateRouteParams(name="R2", hold_on_circuit_open=None))
+    assert sent_body(create) == {"name": "R", "sourceId": "src_1", "destinationId": "dst_1"}
+    assert sent_body(update) == {"name": "R2"}
+
+
+async def test_async_route_holds(mock_api, async_client):
+    from hookbase.models import UpdateRouteParams
+
+    update = mock_api.patch("/api/routes/rte_1").mock(
+        return_value=httpx.Response(200, json={"success": True})
+    )
+    mock_api.get("/api/routes/rte_1").mock(return_value=httpx.Response(200, json={"route": {
+        **ROUTE, "holdOnCircuitOpen": False, "heldCount": 0, "heldCountCapped": False,
+    }}))
+    await async_client.routes.update("rte_1", UpdateRouteParams(hold_on_circuit_open=False))
+    route = await async_client.routes.get("rte_1")
+    assert sent_body(update) == {"holdOnCircuitOpen": False}
+    assert (route.hold_on_circuit_open, route.held_count) == (False, 0)
+
+
 # --------------------------------------------------------------------------- portal tokens
 
 
@@ -690,3 +765,69 @@ async def test_async_api_keys(mock_api):
     mock_api.get("/api/api-keys").mock(return_value=httpx.Response(200, json={"apiKeys": []}))
     async with AsyncHookbase(api_key=TEST_API_KEY) as c:
         assert await c.api_keys.list() == []
+
+
+def test_transform_type_covers_api_engines_and_not_mapping():
+    from typing import get_args
+
+    from hookbase.models.transforms import TransformType
+
+    # TransformType is Union[Literal[...known...], str]; the Literal holds the known engines.
+    assert set(get_args(get_args(TransformType)[0])) == {
+        "jsonata", "javascript", "typescript", "liquid", "xslt", "jmespath", "jsonlogic", "jq",
+    }
+
+
+# --------------------------------------------------------------------------- transform engines
+
+# GET /api/transforms/engines (api/src/routes/transforms.ts), trimmed to two languages.
+ENGINES = {
+    "engines": [
+        {"type": "jsonata", "label": "JSONata",
+         "description": "Query and transformation language for JSON.",
+         "fileExtension": "jsonata", "starterCode": "{\n  \"id\": id\n}",
+         "aiGenerate": True, "available": True},
+        {"type": "jq", "label": "jq", "description": "Command-line JSON processor.",
+         "fileExtension": "jq", "starterCode": "{ id: .id }",
+         "aiGenerate": False, "available": False},
+    ],
+    "contentFormats": ["json", "xml", "text"],
+}
+
+
+def test_transform_engines(mock_api, client):
+    from hookbase.models import TransformEngine, TransformEnginesResponse
+
+    route = mock_api.get("/api/transforms/engines").mock(
+        return_value=httpx.Response(200, json=ENGINES)
+    )
+    result = client.transforms.engines()
+    assert route.called
+    assert isinstance(result, TransformEnginesResponse)
+    jsonata, jq = result.engines
+    assert isinstance(jsonata, TransformEngine)
+    assert (jsonata.type, jsonata.label) == ("jsonata", "JSONata")
+    assert jsonata.file_extension == "jsonata"
+    assert jsonata.starter_code.startswith("{")
+    assert (jsonata.ai_generate, jsonata.available) == (True, True)
+    # jq needs transform isolation; this deployment has it off.
+    assert (jq.ai_generate, jq.available) == (False, False)
+    assert result.content_formats == ["json", "xml", "text"]
+
+
+def test_transform_engines_accepts_a_language_added_later(mock_api, client):
+    mock_api.get("/api/transforms/engines").mock(return_value=httpx.Response(200, json={
+        "engines": [{"type": "cel", "label": "CEL", "description": "", "fileExtension": "cel",
+                     "starterCode": "", "aiGenerate": False, "available": True}],
+        "contentFormats": ["json", "yaml"],
+    }))
+    result = client.transforms.engines()
+    assert result.engines[0].type == "cel"
+    assert result.content_formats == ["json", "yaml"]
+
+
+async def test_async_transform_engines(mock_api, async_client):
+    mock_api.get("/api/transforms/engines").mock(return_value=httpx.Response(200, json=ENGINES))
+    result = await async_client.transforms.engines()
+    assert [e.type for e in result.engines] == ["jsonata", "jq"]
+    assert result.engines[1].available is False

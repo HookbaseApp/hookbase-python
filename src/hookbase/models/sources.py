@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from . import _wire
-from ._base import HookbaseModel
+from ._base import SECRET_MODEL_CONFIG, HookbaseModel
 
 # Providers the API accepts for a source today.
 #
@@ -93,6 +93,10 @@ class Source(HookbaseModel):
     slug: str
     #: Any string; see KNOWN_SOURCE_PROVIDERS. Never validated client-side.
     provider: SourceProvider | None = None
+    #: The provider-catalog entry (client.providers.get) the source was made from, or None. It can
+    #: differ from ``provider``: a catalog entry with no verifier of its own saves as Custom HMAC.
+    #: Set on create only.
+    catalog_provider: str | None = None
     description: str | None = None
     #: Whether a signing secret is set. The secret itself is not returned here.
     has_signing_secret: bool = False
@@ -181,13 +185,15 @@ class Source(HookbaseModel):
 class SourceWithSecret(Source):
     """What create() returns: a source plus the one look at its signing secret you get."""
 
+    model_config = SECRET_MODEL_CONFIG
+
     #: The signing secret, in full, this once. None when the source has none to show: the
     #: provider verifies without one (verifies_without_secret), the vendor issues it after
     #: registration (awaiting_signing_secret), or the provider does not sign.
-    signing_secret: str | None = None
+    signing_secret: str | None = Field(default=None, repr=False)
     #: Meta providers (whatsapp) only: the verify token to paste into Meta's webhook setup, in
     #: full, this once. Sources.verify_token reveals it later.
-    verify_token: str | None = None
+    verify_token: str | None = Field(default=None, repr=False)
 
 
 class PendingVerification(HookbaseModel):
@@ -198,17 +204,27 @@ class PendingVerification(HookbaseModel):
     :meth:`Sources.adopt_pending_verification` to make it the source's signing secret.
     """
 
+    model_config = SECRET_MODEL_CONFIG
+
     provider: str
-    token: str
+    token: str = Field(repr=False)
     received_at: str
     client_ip: str | None = None
 
 
 class CreateSourceParams(HookbaseModel):
+    model_config = SECRET_MODEL_CONFIG
+
     name: str
     #: Required: it forms the ingest URL, /ingest/<org>/<slug>, and cannot be changed later.
     slug: str
     provider: SourceProvider | None = None
+    #: The provider-catalog entry id (client.providers.list) this source is made from. Set it when
+    #: creating from a catalog entry, above all one with no verifier of its own that saves as
+    #: Custom HMAC: its sender is still the vendor, whose addresses every customer shares, so the
+    #: API then does not count the source's IP allowlist as verifying the sender for a bridge
+    #: destination. An id not in the catalog is a 400. Create only: no update changes it.
+    catalog_provider: str | None = None
     description: str | None = None
     #: What to supply depends on the provider (the catalog's signatureVerification.secretSource,
     #: see client.providers.get):
@@ -218,9 +234,9 @@ class CreateSourceParams(HookbaseModel):
     #:   - "operator": omit it and the API generates one, returned once on the created source.
     #:   - "public_key": the vendor's public key (PEM or base64).
     #:   - "built_in" (wise, wise-sandbox, aws-sns): send nothing; any secret is a 400.
-    signing_secret: str | None = None
+    signing_secret: str | None = Field(default=None, repr=False)
     #: Meta providers (whatsapp) only; a 400 for any other. Omit it and the API generates one.
-    verify_token: str | None = None
+    verify_token: str | None = Field(default=None, repr=False)
     #: Reject events whose signature fails verification. Defaults to False.
     reject_invalid_signatures: bool | None = None
     rate_limit_per_minute: int | None = None
@@ -241,13 +257,15 @@ class CreateSourceParams(HookbaseModel):
 
 
 class UpdateSourceParams(HookbaseModel):
+    model_config = SECRET_MODEL_CONFIG
+
     name: str | None = None
     description: str | None = None
     provider: SourceProvider | None = None
     is_active: bool | None = None
-    signing_secret: str | None = None
+    signing_secret: str | None = Field(default=None, repr=False)
     #: Meta providers (whatsapp) only. "" regenerates it, as does clear=["verifyToken"].
-    verify_token: str | None = None
+    verify_token: str | None = Field(default=None, repr=False)
     reject_invalid_signatures: bool | None = None
     rate_limit_per_minute: int | None = None
     ip_filter_mode: IpFilterMode | None = None

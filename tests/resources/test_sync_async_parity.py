@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import inspect
 import json
+import re
 from typing import Any, Callable
 
 import httpx
 import pytest
 
 from hookbase import AsyncHookbase, Hookbase
+from hookbase.resources._base import AsyncResource, SyncResource
 
 from ..conftest import TEST_API_KEY
 
@@ -185,7 +187,11 @@ CASES: dict[str, Case] = {
     "events.get": (lambda c: c.events.get("evt_1"), "GET", "/api/events/evt_1",
                    {"event": EVENT, "deliveries": []}, None, lambda r: r.id == "evt_1"),
     "events.debug": (lambda c: c.events.debug("evt_1"), "GET", "/api/events/evt_1/debug",
-                     {"event": EVENT}, None, lambda r: r is not None),
+                     {"event": EVENT, "deliveries": [{"id": "dlv_1", "status": "held",
+                                                      "holdExpiresAt": "2026-11-12T00:00:00Z"}],
+                      "debug": {"curlCommand": "curl x"}}, None,
+                     lambda r: r.curl_command == "curl x"
+                     and r.deliveries[0].hold_expires_at == "2026-11-12T00:00:00Z"),
     # outbound message log and DLQ
     "message_log.get": (lambda c: c.message_log.get("msg_1"), "GET",
                         "/api/outbound-messages/msg_1", {"data": MSG}, None,
@@ -358,6 +364,89 @@ CASES.update({
                            lambda r: r == {"data": []}),
 })
 
+BRIDGE = {**DEST, "type": "bridge", "url": "", "config": {"eventTypeSource": "fixed",
+                                                          "eventType": "order.created"}}
+
+# Added for API 2026-11 (4.2.0): destination secrets and bridges, transform engines, replay with
+# edits, holds.
+CASES.update({
+    "destinations.create": (lambda c: c.destinations.create({"name": "D", "slug": "d",
+                                                             "url": "https://x.test"}),
+                            "POST", "/api/destinations",
+                            {"destination": {**DEST, "hasSigningSecret": True,
+                                             "signingSecret": "whsec_d"}},
+                            {"name": "D", "slug": "d", "url": "https://x.test"},
+                            lambda r: r.signing_secret == "whsec_d" and r.has_signing_secret),
+    "destinations.reveal_secret": (lambda c: c.destinations.reveal_secret("dst_1"), "GET",
+                                   "/api/destinations/dst_1/reveal-secret",
+                                   {"signingSecret": "whsec_d", "previousSecretExpiresAt": None},
+                                   None, lambda r: r.signing_secret == "whsec_d"),
+    "destinations.rotate_secret": (lambda c: c.destinations.rotate_secret(
+                                       "dst_1", grace_period_seconds=120),
+                                   "POST", "/api/destinations/dst_1/rotate-secret",
+                                   {"signingSecret": "whsec_e",
+                                    "previousSecretExpiresAt": "2026-11-12T00:02:00Z"},
+                                   {"gracePeriodSeconds": 120},
+                                   lambda r: r.previous_secret_expires_at is not None),
+    "destinations.test(payload)": (lambda c: c.destinations.test("dst_1", payload={"a": 1}),
+                                   "POST", "/api/destinations/dst_1/test",
+                                   {"success": True, "dryRun": True, "eventType": "order.created",
+                                    "eventTypeExists": True, "matchingEndpoints": 3},
+                                   {"payload": {"a": 1}},
+                                   lambda r: r.dry_run is True and r.matching_endpoints == 3),
+    "destinations.get(bridge)": (lambda c: c.destinations.get("dst_1"), "GET",
+                                 "/api/destinations/dst_1", {"destination": BRIDGE}, None,
+                                 lambda r: r.bridge_config.event_type == "order.created"),
+    "transforms.engines": (lambda c: c.transforms.engines(), "GET", "/api/transforms/engines",
+                           {"engines": [{"type": "jq", "label": "jq", "available": False}],
+                            "contentFormats": ["json", "xml", "text"]}, None,
+                           lambda r: r.engines[0].available is False
+                           and r.content_formats == ["json", "xml", "text"]),
+    "deliveries.replay(edits)": (lambda c: c.deliveries.replay(
+                                     "dlv_1", payload_patch={"a": None},
+                                     destination_override="dst_2", persist_transform=False),
+                                 "POST", "/api/deliveries/dlv_1/replay",
+                                 {"deliveryId": "dlv_2", "modified": True,
+                                  "destinationOverridden": True, "targetDestinationId": "dst_2"},
+                                 {"payloadPatch": {"a": None}, "destinationOverride": "dst_2",
+                                  "persistTransform": False},
+                                 lambda r: r.modified and r.target_destination_id == "dst_2"),
+    "deliveries.list(held)": (lambda c: c.deliveries.list(status="held"), "GET",
+                              "/api/deliveries",
+                              {"deliveries": [{**DELIVERY, "status": "held",
+                                               "holdExpiresAt": "2026-11-12T00:00:00Z"}],
+                               "limit": 50, "offset": 0}, None,
+                              lambda r: r.data[0].hold_expires_at == "2026-11-12T00:00:00Z"),
+    "routes.create(hold)": (lambda c: c.routes.create({"name": "R", "sourceId": "src_1",
+                                                       "destinationId": "dst_1",
+                                                       "holdOnCircuitOpen": False}),
+                            "POST", "/api/routes",
+                            {"route": {**ROUTE, "holdOnCircuitOpen": False}},
+                            {"name": "R", "sourceId": "src_1", "destinationId": "dst_1",
+                             "holdOnCircuitOpen": False},
+                            lambda r: r.hold_on_circuit_open is False),
+    "routes.get(held)": (lambda c: c.routes.get("rte_1"), "GET", "/api/routes/rte_1",
+                         {"route": {**ROUTE, "holdOnCircuitOpen": True, "heldCount": 2,
+                                    "heldCountCapped": False}}, None,
+                         lambda r: r.held_count == 2 and r.held_count_capped is False),
+    "endpoints.get(held)": (lambda c: c.endpoints.get("ep_1"), "GET",
+                            "/api/webhook-endpoints/ep_1",
+                            {"data": {**EP, "holdOnCircuitOpen": True, "heldCount": 10000,
+                                      "heldCountCapped": True}}, None,
+                            lambda r: r.held_count_capped is True),
+    "message_log.get(bridge)": (lambda c: c.message_log.get("msg_1"), "GET",
+                                "/api/outbound-messages/msg_1",
+                                {"data": {**MSG, "status": "held",
+                                          "holdExpiresAt": "2026-11-12T00:00:00Z",
+                                          "bridge": {"inboundEventId": "evt_1",
+                                                     "deliveryId": "dlv_1", "hop": 1}}},
+                                None, lambda r: r.bridge.hop == 1 and r.hold_expires_at),
+    "message_log.stats(held)": (lambda c: c.message_log.stats(), "GET",
+                                "/api/outbound-messages/stats/summary",
+                                {"data": {"held": 4, "total": 4}}, None,
+                                lambda r: r.held == 4),
+})
+
 
 
 def _sync(client: Hookbase, call: Callable[[Any], Any]) -> Any:
@@ -416,3 +505,58 @@ def test_export_ids_are_comma_joined(mock_api):
     with Hookbase(api_key=TEST_API_KEY) as client:
         client.routes.export(ids=["rte_1", "rte_2"])
     assert dict(route.calls.last.request.url.params) == {"ids": "rte_1,rte_2"}
+
+
+def _resources(client: Any, prefix: str = "") -> dict[str, Any]:
+    """Every resource on a client by its attribute path, outbound.* included."""
+    found: dict[str, Any] = {}
+    for name in dir(client):
+        if name.startswith("_"):
+            continue
+        value = getattr(client, name)
+        if isinstance(value, (SyncResource, AsyncResource)):
+            found[prefix + name] = value
+        elif name == "outbound":
+            found.update(_resources(value, "outbound."))
+    return found
+
+
+def _methods(resource: Any) -> dict[str, Any]:
+    return {name: fn for name, fn in inspect.getmembers(type(resource), inspect.isfunction)
+            if not name.startswith("_")}
+
+
+def _parameters(fn: Any) -> list[tuple[str, Any, Any, Any]]:
+    return [(p.name, p.kind, p.default, p.annotation)
+            for p in inspect.signature(fn).parameters.values()]
+
+
+def _unprefixed(annotation: Any) -> str:
+    """SyncCursorPage[X] and AsyncCursorPage[X] both as CursorPage[X]."""
+    return re.sub(r"\b(Sync|Async)", "", str(annotation))
+
+
+async def test_async_resources_have_the_sync_signatures():
+    # The cases above only cover the calls they list. This catches an argument, default or
+    # method added to one client and not the other.
+    with Hookbase(api_key=TEST_API_KEY) as sync_client:
+        sync_resources = _resources(sync_client)
+    async with AsyncHookbase(api_key=TEST_API_KEY) as async_client:
+        async_resources = _resources(async_client)
+    assert sorted(async_resources) == sorted(sync_resources)
+    assert "outbound.endpoints" in sync_resources
+
+    checked = 0
+    for path, sync_resource in sync_resources.items():
+        sync_methods = _methods(sync_resource)
+        async_methods = _methods(async_resources[path])
+        assert sorted(async_methods) == sorted(sync_methods), path
+        for name, sync_fn in sync_methods.items():
+            async_fn = async_methods[name]
+            where = f"{path}.{name}"
+            assert inspect.iscoroutinefunction(async_fn), where
+            assert _parameters(async_fn) == _parameters(sync_fn), where
+            assert _unprefixed(inspect.signature(async_fn).return_annotation) == _unprefixed(
+                inspect.signature(sync_fn).return_annotation), where
+            checked += 1
+    assert checked > 100

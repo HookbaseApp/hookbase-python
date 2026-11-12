@@ -4,7 +4,7 @@ import pytest
 import respx
 from pydantic import ValidationError
 
-from hookbase import Hookbase
+from hookbase import AsyncHookbase, Hookbase
 from hookbase.errors import HookbaseError
 from hookbase.models import (
     CreateEndpointParams,
@@ -254,6 +254,10 @@ ENDPOINT_RESPONSE = {
     "circuitFailureThreshold": 7,
     "circuitSuccessThreshold": 3,
     "circuitCooldownSeconds": 120,
+    "holdOnCircuitOpen": True,
+    # GET only (countHeld in api/src/utils/holds.ts).
+    "heldCount": 3,
+    "heldCountCapped": False,
     "totalMessages": 900,
     "totalSuccesses": 880,
     "totalFailures": 20,
@@ -430,3 +434,71 @@ def test_update_endpoint_without_clear_is_unchanged(mock_api, client):
     )
     client.outbound.endpoints.update("ep_1", UpdateEndpointParams(timeout_seconds=45))
     assert sent_body(route) == {"timeoutSeconds": 45}
+
+
+# --- holds while the circuit is open ---
+
+
+def test_get_endpoint_reads_the_hold_setting_and_count(mock_api, client):
+    mock_api.get("/api/webhook-endpoints/ep_1").respond(200, json={"data": {
+        **ENDPOINT_RESPONSE, "heldCount": 10000, "heldCountCapped": True,
+    }})
+    ep = client.outbound.endpoints.get("ep_1")
+    assert ep.hold_on_circuit_open is True
+    assert (ep.held_count, ep.held_count_capped) == (10000, True)
+
+
+def test_list_endpoints_has_no_held_count(mock_api, client):
+    row = {k: v for k, v in ENDPOINT_RESPONSE.items() if k not in ("heldCount", "heldCountCapped")}
+    mock_api.get("/api/webhook-endpoints").respond(200, json={
+        "data": [{**row, "holdOnCircuitOpen": False}],
+        "pagination": {"hasMore": False, "nextCursor": None},
+    })
+    ep = client.outbound.endpoints.list().data[0]
+    assert ep.hold_on_circuit_open is False
+    assert ep.held_count is None
+
+
+@pytest.mark.parametrize("hold", [True, False])
+def test_create_and_update_endpoint_send_hold_on_circuit_open(mock_api, client, hold):
+    create = mock_api.post("/api/webhook-endpoints").respond(200, json={"data": ENDPOINT_DATA})
+    update = mock_api.patch("/api/webhook-endpoints/ep_1").respond(
+        200, json={"data": ENDPOINT_DATA},
+    )
+    client.outbound.endpoints.create("app_1", CreateEndpointParams(
+        url="https://acme.test/webhooks", hold_on_circuit_open=hold,
+    ))
+    client.outbound.endpoints.update("ep_1", UpdateEndpointParams(hold_on_circuit_open=hold))
+    assert sent_body(create)["holdOnCircuitOpen"] is hold
+    assert sent_body(update) == {"holdOnCircuitOpen": hold}
+
+
+def test_unset_hold_on_circuit_open_is_not_sent(mock_api, client):
+    # The API answers 400 to holdOnCircuitOpen: null, so None must leave the key out.
+    create = mock_api.post("/api/webhook-endpoints").respond(200, json={"data": ENDPOINT_DATA})
+    update = mock_api.patch("/api/webhook-endpoints/ep_1").respond(
+        200, json={"data": ENDPOINT_DATA},
+    )
+    client.outbound.endpoints.create("app_1", CreateEndpointParams(
+        url="https://acme.test/webhooks", hold_on_circuit_open=None,
+    ))
+    client.outbound.endpoints.update("ep_1", UpdateEndpointParams(
+        description="x", hold_on_circuit_open=None,
+    ))
+    assert "holdOnCircuitOpen" not in sent_body(create)
+    assert sent_body(update) == {"description": "x"}
+
+
+async def test_async_endpoint_holds(mock_api):
+    update = mock_api.patch("/api/webhook-endpoints/ep_1").respond(200, json={"data": {
+        **ENDPOINT_RESPONSE, "holdOnCircuitOpen": False,
+    }})
+    mock_api.get("/api/webhook-endpoints/ep_1").respond(200, json={"data": ENDPOINT_RESPONSE})
+    async with AsyncHookbase(api_key="whr_test") as c:
+        updated = await c.outbound.endpoints.update(
+            "ep_1", UpdateEndpointParams(hold_on_circuit_open=False),
+        )
+        got = await c.outbound.endpoints.get("ep_1")
+    assert sent_body(update) == {"holdOnCircuitOpen": False}
+    assert updated.hold_on_circuit_open is False
+    assert (got.held_count, got.held_count_capped) == (3, False)

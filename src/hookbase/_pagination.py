@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Iterator
 from typing import Any, Generic, TypeVar
 
-from pydantic import TypeAdapter
+from pydantic import ConfigDict, TypeAdapter
 
 from ._client import AsyncTransport, SyncTransport
 
@@ -360,7 +360,11 @@ class AsyncLimitOffsetPage(Generic[T]):
 
 
 def _parse_list(raw: Any, model: type[T]) -> list[T]:
-    adapter = TypeAdapter(list[model])  # type: ignore[valid-type]
+    # pydantic takes hide_input_in_errors from the outermost type, so a list of a model that
+    # carries a secret has to ask for it too (models/_base.py SECRET_MODEL_CONFIG).
+    hides_input = getattr(model, "model_config", {}).get("hide_input_in_errors", False)
+    config = ConfigDict(hide_input_in_errors=True) if hides_input else None
+    adapter = TypeAdapter(list[model], config=config)  # type: ignore[valid-type]
     return adapter.validate_python(raw)
 
 

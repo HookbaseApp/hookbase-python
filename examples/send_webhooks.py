@@ -18,7 +18,9 @@ endpoint = client.outbound.endpoints.create(app.id, {
     "description": "Production webhook endpoint",
 })
 print(f"Endpoint: {endpoint.id}")
-print(f"Endpoint secret: {endpoint.secret}")
+# The endpoint's signing secret is returned this once. Put it in your secret store, and hand it to
+# the customer to verify deliveries with, instead of printing or logging it.
+endpoint_secret = endpoint.secret
 
 # Create event types
 order_type = client.outbound.event_types.create({

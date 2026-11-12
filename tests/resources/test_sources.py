@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import respx
 
-from hookbase import Hookbase
+from hookbase import AsyncHookbase, Hookbase
 from hookbase.models import Source, SourceWithSecret
 from hookbase.models.sources import CreateSourceParams, UpdateSourceParams
 
@@ -276,3 +276,52 @@ def test_update_source_params_empty_list_is_sent():
     """[] must survive serialization — it is how a source reverts to accepting any method."""
     params = UpdateSourceParams(allowed_methods=[])
     assert params.model_dump(by_alias=True, exclude_none=True)["allowedMethods"] == []
+
+
+# --- catalog_provider (the provider-catalog entry a source was made from) ---
+
+
+def test_create_source_from_a_catalog_entry(mock_api, client):
+    route = mock_api.post("/api/sources").respond(200, json={"source": {
+        **SOURCE_DATA, "provider": "custom", "catalogProvider": "salesforce",
+        "signingSecret": "whsec_new",
+    }})
+    src = client.sources.create(CreateSourceParams(
+        name="Salesforce", slug="salesforce", provider="custom", catalog_provider="salesforce",
+    ))
+    # Salesforce has no verifier of its own, so it saves as Custom HMAC with the entry recorded.
+    assert sent_body(route) == {
+        "name": "Salesforce", "slug": "salesforce", "provider": "custom",
+        "catalogProvider": "salesforce",
+    }
+    assert isinstance(src, SourceWithSecret)
+    assert src.catalog_provider == "salesforce"
+
+
+def test_source_without_a_catalog_entry(mock_api, client):
+    mock_api.get("/api/sources/src_1").respond(200, json={"source": {
+        **SOURCE_DATA, "catalogProvider": None,
+    }})
+    assert client.sources.get("src_1").catalog_provider is None
+    # Responses from before the field existed read the same.
+    assert Source.model_validate(SOURCE_DATA).catalog_provider is None
+
+
+def test_update_source_has_no_catalog_provider():
+    # The API's update schema is strict and does not take it.
+    assert "catalog_provider" not in UpdateSourceParams.model_fields
+
+
+async def test_async_create_source_with_ip_allowlist_and_catalog_entry(mock_api):
+    route = mock_api.post("/api/sources").respond(200, json={"source": {
+        **SOURCE_DATA, "ipFilterMode": "allowlist", "ipAllowlist": ["203.0.113.0/24"],
+        "catalogProvider": "github",
+    }})
+    async with AsyncHookbase(api_key="whr_test") as c:
+        src = await c.sources.create(CreateSourceParams(
+            name="GitHub", slug="github", provider="github", catalog_provider="github",
+            ip_filter_mode="allowlist", ip_allowlist=["203.0.113.0/24"],
+        ))
+    assert sent_body(route)["ipAllowlist"] == ["203.0.113.0/24"]
+    assert src.ip_allowlist == ["203.0.113.0/24"]
+    assert src.catalog_provider == "github"

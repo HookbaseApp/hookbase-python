@@ -7,6 +7,8 @@ the wire fails here rather than coming back empty.
 
 from __future__ import annotations
 
+from typing import Any
+
 import httpx
 import pytest
 
@@ -462,3 +464,245 @@ def test_destination_test_without_optional_fields(mock_api, client, missing):
     result = client.destinations.test("dst_1")
     assert result.success is False
     assert result.error == "HTTP 500"
+
+
+# --- replay with edits (POST /api/deliveries/:id/replay) ---
+
+REPLAY = {
+    "deliveryId": "del_2",
+    "message": "Replay queued",
+    "modified": False,
+    "destinationOverridden": False,
+    "transformOverridden": False,
+    "transformPersisted": False,
+    "headersOverridden": False,
+    "targetDestinationId": "dst_1",
+}
+
+
+def test_replay_without_arguments_sends_no_body(mock_api, client):
+    route = mock_api.post("/api/deliveries/del_1/replay").respond(200, json=REPLAY)
+    result = client.deliveries.replay("del_1")
+    assert route.calls.last.request.content == b""
+    assert result.delivery_id == "del_2"
+    assert result.modified is False
+    assert result.target_destination_id == "dst_1"
+
+
+def test_replay_reads_a_bare_response():
+    # An older API answered with deliveryId and message only.
+    from hookbase.models.deliveries import ReplayResult
+
+    r = ReplayResult.model_validate({"deliveryId": "del_2", "message": "Replay queued"})
+    assert (r.modified, r.headers_overridden, r.target_destination_id) == (False, False, None)
+
+
+def test_replay_with_a_payload_patch(mock_api, client):
+    route = mock_api.post("/api/deliveries/del_1/replay").respond(200, json={
+        **REPLAY, "message": "Replay queued with modified payload", "modified": True,
+    })
+    # None in a merge patch removes the key, so it must reach the wire as null.
+    result = client.deliveries.replay("del_1", payload_patch={"amount": 10, "coupon": None})
+    assert sent_body(route) == {"payloadPatch": {"amount": 10, "coupon": None}}
+    assert result.modified is True
+
+
+def test_replay_with_every_override(mock_api, client):
+    route = mock_api.post("/api/deliveries/del_1/replay").respond(200, json={
+        **REPLAY, "modified": True, "destinationOverridden": True, "transformOverridden": True,
+        "transformPersisted": True, "headersOverridden": True, "targetDestinationId": "dst_9",
+    })
+    result = client.deliveries.replay(
+        "del_1",
+        modified_payload={"id": 1},
+        destination_override="backup-dest",
+        transform_override={"code": "{ \"id\": id }", "type": "jsonata"},
+        headers_override={"X-Replay": "1"},
+        persist_transform=True,
+    )
+    assert sent_body(route) == {
+        "modifiedPayload": {"id": 1},
+        "destinationOverride": "backup-dest",
+        "transformOverride": {"code": "{ \"id\": id }", "type": "jsonata"},
+        "headersOverride": {"X-Replay": "1"},
+        "persistTransform": True,
+    }
+    assert (result.destination_overridden, result.transform_overridden) == (True, True)
+    assert (result.transform_persisted, result.headers_overridden) == (True, True)
+    assert result.target_destination_id == "dst_9"
+
+
+@pytest.mark.parametrize("payload", [[], "text", 0, False, {}])
+def test_replay_sends_any_modified_payload_value(mock_api, client, payload):
+    route = mock_api.post("/api/deliveries/del_1/replay").respond(200, json=REPLAY)
+    client.deliveries.replay("del_1", modified_payload=payload)
+    assert sent_body(route) == {"modifiedPayload": payload}
+
+
+NO_EDITS: dict[str, Any] = dict.fromkeys([
+    "modified_payload", "payload_patch", "destination_override", "transform_override",
+    "headers_override", "persist_transform",
+])
+
+
+def test_replay_leaves_out_none_arguments(mock_api, client):
+    # The API takes any value that is present as an edit: modifiedPayload null would replay a
+    # literal null.
+    route = mock_api.post("/api/deliveries/del_1/replay").respond(200, json=REPLAY)
+    client.deliveries.replay("del_1", **NO_EDITS)
+    assert route.calls.last.request.content == b""
+    # None doesn't count as the second payload edit either.
+    client.deliveries.replay("del_1", modified_payload=None, payload_patch={"a": 1})
+    assert sent_body(route) == {"payloadPatch": {"a": 1}}
+
+
+async def test_async_replay_leaves_out_none_arguments(mock_api, async_client):
+    route = mock_api.post("/api/deliveries/del_1/replay").respond(200, json=REPLAY)
+    await async_client.deliveries.replay("del_1", **NO_EDITS)
+    assert route.calls.last.request.content == b""
+    await async_client.deliveries.replay("del_1", modified_payload={"a": 1}, payload_patch=None)
+    assert sent_body(route) == {"modifiedPayload": {"a": 1}}
+
+
+def test_replay_with_both_payload_edits_raises_before_the_request(mock_api, client):
+    # No route is mocked, so a request would fail the test with a respx error, not ValueError.
+    with pytest.raises(ValueError, match="not both"):
+        client.deliveries.replay("del_1", modified_payload={"a": 1}, payload_patch={"a": 2})
+    assert not mock_api.calls
+
+
+async def test_async_replay(mock_api, async_client):
+    route = mock_api.post("/api/deliveries/del_1/replay").respond(200, json={
+        **REPLAY, "headersOverridden": True,
+    })
+    result = await async_client.deliveries.replay("del_1", headers_override={"X-A": "b"})
+    assert sent_body(route) == {"headersOverride": {"X-A": "b"}}
+    assert result.headers_overridden is True
+    plain = await async_client.deliveries.replay("del_1")
+    assert route.calls.last.request.content == b""
+    assert plain.delivery_id == "del_2"
+    with pytest.raises(ValueError):
+        await async_client.deliveries.replay("del_1", modified_payload=1, payload_patch={})
+
+
+# --- held deliveries ---
+
+
+def test_held_delivery_reads_hold_expires_at(mock_api, client):
+    # A held delivery's deadline comes as holdExpiresAt; the API nulls nextRetryAt for it.
+    held = {**DELIVERY, "status": "held", "nextRetryAt": None,
+            "holdExpiresAt": "2026-11-12T10:00:00.000Z"}
+    mock_api.get("/api/deliveries").respond(
+        200, json={"deliveries": [held], "limit": 20, "offset": 0}
+    )
+    mock_api.get("/api/deliveries/del_1").respond(200, json={"delivery": held})
+    d = client.deliveries.list(status="held").data[0]
+    assert d.status == "held"
+    assert d.hold_expires_at == "2026-11-12T10:00:00.000Z"
+    assert d.next_retry_at is None
+    assert client.deliveries.get("del_1").hold_expires_at == "2026-11-12T10:00:00.000Z"
+    assert Delivery.model_validate(DELIVERY).hold_expires_at is None
+
+
+# --- events.debug (GET /api/events/:id/debug) ---
+
+# The shape the route sends (api/src/routes/events.ts), trimmed of timing, filterEvaluations and
+# recentConfigChanges.
+EVENT_DEBUG = {
+    "event": {
+        "id": "evt_1", "sourceId": "src_1", "sourceName": "GitHub", "sourceSlug": "github",
+        "provider": "github", "eventType": "push", "payloadHash": "abc",
+        "ipAddress": "203.0.113.9", "signatureValid": True,
+        "receivedAt": "2026-11-11T10:00:00.000Z", "signatureIssue": None,
+    },
+    "request": {"headers": {"content-type": "application/json"}, "payloadSize": 17,
+                "contentType": "application/json"},
+    "payload": {"ref": "refs/heads/main"},
+    "transient": False,
+    "rawPayload": "{\"ref\":\"refs/heads/main\"}",
+    "deliveries": [
+        {
+            "id": "del_1", "status": "held", "statusCode": 503, "durationMs": 120,
+            "attempt": 2, "maxAttempts": 5, "nextRetryAt": None,
+            "holdExpiresAt": "2026-11-12T10:00:00.000Z", "error": "HTTP 503",
+            "responseBody": "Service Unavailable", "responseHeaders": {"retry-after": "30"},
+            "transformedPayload": {"branch": "main"}, "routeId": "rte_1",
+            "destinationId": "dst_1",
+            "destination": {"name": "Slack", "url": "https://hooks.slack.com/x", "method": "POST"},
+            "startedAt": "2026-11-11T10:00:01.000Z", "completedAt": "2026-11-11T10:00:02.000Z",
+            "failoverIndex": 0, "parentDeliveryId": None, "fingerprint": "fp_503",
+            "retryAfter": "30", "clusterCount": 4,
+            "patternHints": [{"id": "upstream-unavailable", "category": "availability",
+                              "title": "Destination unavailable", "hypothesis": "Down.",
+                              "suggestedFix": "Wait for it."}],
+            "routeCircuit": {"state": "open", "openedAt": "2026-11-11T09:59:00.000Z",
+                             "cooldownSeconds": 300, "failureThreshold": 5,
+                             "consecutiveFailures": 5},
+        },
+        {
+            "id": "del_2", "status": "delivered", "statusCode": 200, "durationMs": 80,
+            "attempt": 1, "maxAttempts": 5, "nextRetryAt": None, "holdExpiresAt": None,
+            "error": None, "responseBody": "ok", "responseHeaders": {},
+            "transformedPayload": None, "routeId": "rte_2", "destinationId": "dst_2",
+            "destination": {"name": "Backup", "url": "https://b.test", "method": "POST"},
+            "startedAt": "2026-11-11T10:00:01.000Z", "completedAt": "2026-11-11T10:00:01.500Z",
+            "failoverIndex": 1, "parentDeliveryId": "del_0", "fingerprint": None,
+            "retryAfter": None, "clusterCount": None, "patternHints": [], "routeCircuit": None,
+        },
+    ],
+    "timing": {},
+    "filterEvaluations": [],
+    "recentConfigChanges": {"sinceDays": 14, "entries": []},
+    "debug": {"curlCommand": "curl -X POST https://api.test/ingest/acme/github"},
+}
+
+
+def test_events_debug_reads_curl_command_from_debug(mock_api, client):
+    mock_api.get("/api/events/evt_1/debug").respond(200, json=EVENT_DEBUG)
+    info = client.events.debug("evt_1")
+    assert info.curl_command == "curl -X POST https://api.test/ingest/acme/github"
+    # The headers and payload sit beside `event`; they used to read as empty.
+    assert info.event.headers == {"content-type": "application/json"}
+    assert info.event.payload == {"ref": "refs/heads/main"}
+    assert info.payload == {"ref": "refs/heads/main"}
+    assert info.transient is False
+
+
+def test_events_debug_types_the_deliveries(mock_api, client):
+    from hookbase.models import EventDebugDelivery
+
+    mock_api.get("/api/events/evt_1/debug").respond(200, json=EVENT_DEBUG)
+    held, backup = client.events.debug("evt_1").deliveries
+    assert isinstance(held, EventDebugDelivery)
+    assert (held.status, held.status_code, held.duration_ms) == ("held", 503, 120)
+    assert (held.attempt, held.max_attempts) == (2, 5)
+    assert held.next_retry_at is None
+    assert held.hold_expires_at == "2026-11-12T10:00:00.000Z"
+    assert held.response_headers == {"retry-after": "30"}
+    assert held.transformed_payload == {"branch": "main"}
+    assert held.destination is not None and held.destination.method == "POST"
+    assert (held.retry_after, held.cluster_count, held.fingerprint) == ("30", 4, "fp_503")
+    assert held.pattern_hints[0].suggested_fix == "Wait for it."
+    assert held.route_circuit is not None
+    assert (held.route_circuit.state, held.route_circuit.consecutive_failures) == ("open", 5)
+    assert (backup.failover_index, backup.parent_delivery_id) == (1, "del_0")
+    assert backup.route_circuit is None
+    assert backup.pattern_hints == []
+
+
+def test_events_debug_of_a_transient_event_has_no_curl_command(mock_api, client):
+    mock_api.get("/api/events/evt_1/debug").respond(200, json={
+        **EVENT_DEBUG, "payload": None, "transient": True, "deliveries": [],
+        "debug": {"curlCommand": None},
+    })
+    info = client.events.debug("evt_1")
+    assert info.curl_command == ""
+    assert info.transient is True
+    assert info.event.payload is None
+
+
+async def test_async_events_debug(mock_api, async_client):
+    mock_api.get("/api/events/evt_1/debug").respond(200, json=EVENT_DEBUG)
+    info = await async_client.events.debug("evt_1")
+    assert info.curl_command.startswith("curl ")
+    assert [d.id for d in info.deliveries] == ["del_1", "del_2"]

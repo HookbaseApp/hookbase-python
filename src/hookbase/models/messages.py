@@ -9,9 +9,14 @@ from ._base import HookbaseModel
 # Every status `outbound_messages.status` takes. The field accepts any string so a status the
 # API adds later does not make a whole list page fail to decode, which a closed Literal did for
 # `processing`, `awaiting_retry` and `dlq`.
+#
+# `awaiting_pull`: waiting for a polling endpoint's consumer to fetch it. `fifo_waiting`: queued
+# behind an earlier message on a FIFO endpoint. `held`: parked while the endpoint's circuit is
+# open (see `hold_expires_at`).
 MessageStatus = Union[
     Literal[
         "pending", "processing", "success", "failed", "awaiting_retry", "exhausted", "dlq",
+        "awaiting_pull", "fifo_waiting", "held",
     ],
     str,
 ]
@@ -45,6 +50,20 @@ class SendEventResponse(HookbaseModel):
     event_id: str = ""
     messages_queued: int = 0
     endpoints: list[SendEventEndpoint] = []
+    messages_held: int | None = None
+    """Of `messages_queued`, how many were held because their endpoint's circuit is open; they
+    go out when it recovers. None when none were, and on an idempotent repeat."""
+
+
+class OutboundMessageBridge(HookbaseModel):
+    """Where a message published by a bridge destination came from."""
+
+    inbound_event_id: str
+    """The inbound event the bridge destination received."""
+    delivery_id: str | None = None
+    """The inbound delivery to the bridge destination that published this event."""
+    hop: int | None = None
+    """How many bridges the event has passed through; the API stops a loop at its limit."""
 
 
 class OutboundMessage(HookbaseModel):
@@ -66,6 +85,9 @@ class OutboundMessage(HookbaseModel):
     max_attempts: int = 5
     last_response_status: int | None = None
     last_error_message: str | None = None
+    hold_expires_at: str | None = None
+    """For a `held` message: when the hold ends and the message fails if the endpoint's circuit
+    is still open. None for every other status."""
     created_at: str = ""
     completed_at: str | None = None
 
@@ -80,6 +102,8 @@ class OutboundMessage(HookbaseModel):
     priority: int | None = None
     endpoint_description: str | None = None
     payload: Any = None
+    bridge: OutboundMessageBridge | None = None
+    """Set when a bridge destination published the event from an inbound delivery."""
 
     # Deprecated: names the API never sent. The three with an API equivalent mirror it.
     message_id: str = ""
@@ -157,6 +181,8 @@ class StatsSummary(HookbaseModel):
     success: int = 0
     failed: int = 0
     awaiting_retry: int = 0
+    held: int = 0
+    """Waiting while their endpoint's circuit is open."""
     exhausted: int = 0
     dlq: int = 0
     total: int = 0

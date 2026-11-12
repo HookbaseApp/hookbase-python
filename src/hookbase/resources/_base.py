@@ -6,6 +6,7 @@ from typing import Any, TypeVar
 from pydantic import TypeAdapter
 
 from .._client import AsyncTransport, SyncTransport
+from .._pagination import _parse_list
 from ..models import _wire
 
 T = TypeVar("T")
@@ -47,8 +48,7 @@ class SyncResource:
         return adapter.validate_python(data)
 
     def _parse_list(self, model: type[T], data: Any) -> list[T]:
-        adapter = TypeAdapter(list[model])  # type: ignore[valid-type]
-        return adapter.validate_python(data)
+        return _parse_list(data, model)
 
     @staticmethod
     def _clean_params(params: dict[str, Any]) -> dict[str, Any]:
@@ -79,8 +79,7 @@ class AsyncResource:
         return adapter.validate_python(data)
 
     def _parse_list(self, model: type[T], data: Any) -> list[T]:
-        adapter = TypeAdapter(list[model])  # type: ignore[valid-type]
-        return adapter.validate_python(data)
+        return _parse_list(data, model)
 
     @staticmethod
     def _clean_params(params: dict[str, Any]) -> dict[str, Any]:

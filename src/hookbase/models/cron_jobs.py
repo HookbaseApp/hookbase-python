@@ -3,21 +3,25 @@ from __future__ import annotations
 import json
 from typing import Literal
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
-from ._base import HookbaseModel
+from ._base import SECRET_MODEL_CONFIG, HookbaseModel
 
 CronJobExecutionStatus = Literal["success", "failed", "running"]
 
 
 class CronJob(HookbaseModel):
+    # The API returns headers, which hold the job's credentials, in full to a key with the write
+    # scope.
+    model_config = SECRET_MODEL_CONFIG
+
     id: str
     organization_id: str | None = None
     name: str
     description: str | None = None
     url: str = ""
     method: str = "GET"
-    headers: dict[str, str] | None = None
+    headers: dict[str, str] | None = Field(default=None, repr=False)
     payload: str | None = None
     cron_expression: str = ""
     timezone: str = "UTC"
@@ -66,11 +70,13 @@ class CronJobExecution(HookbaseModel):
 
 
 class CreateCronJobParams(HookbaseModel):
+    model_config = SECRET_MODEL_CONFIG
+
     name: str
     description: str | None = None
     url: str
     method: str | None = None
-    headers: dict[str, str] | None = None
+    headers: dict[str, str] | None = Field(default=None, repr=False)
     payload: str | None = None
     cron_expression: str
     timezone: str | None = None
@@ -84,11 +90,13 @@ class CreateCronJobParams(HookbaseModel):
 
 
 class UpdateCronJobParams(HookbaseModel):
+    model_config = SECRET_MODEL_CONFIG
+
     name: str | None = None
     description: str | None = None
     url: str | None = None
     method: str | None = None
-    headers: dict[str, str] | None = None
+    headers: dict[str, str] | None = Field(default=None, repr=False)
     payload: str | None = None
     cron_expression: str | None = None
     timezone: str | None = None

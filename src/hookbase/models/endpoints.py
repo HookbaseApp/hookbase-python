@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Literal, Union
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from . import _wire
-from ._base import HookbaseModel
+from ._base import SECRET_MODEL_CONFIG, HookbaseModel
 
 CircuitState = Literal["closed", "open", "half_open"]
 BackoffType = Literal["exponential", "linear", "fixed"]
@@ -45,8 +45,11 @@ SuccessStatusCode = Union[int, str]
 class CustomHeader(HookbaseModel):
     """One endpoint header, in the `{"name": .., "value": ..}` form the API takes."""
 
+    model_config = SECRET_MODEL_CONFIG
+
     name: str
-    value: str
+    value: str = Field(repr=False)
+    """Left out of repr(): custom headers commonly carry the receiver's credential."""
 
 
 class WebhookEndpoint(HookbaseModel):
@@ -60,11 +63,14 @@ class WebhookEndpoint(HookbaseModel):
     `extra="ignore"` without a word.
     """
 
+    # The API returns header values in full to a key with the write scope.
+    model_config = SECRET_MODEL_CONFIG
+
     id: str
     application_id: str
     url: str
     description: str | None = None
-    secret: str = ""
+    secret: str = Field(default="", repr=False)
     """The full signing secret. Populated by `create` alone; save it then,
     because no later response repeats it."""
     secret_prefix: str = ""
@@ -78,7 +84,7 @@ class WebhookEndpoint(HookbaseModel):
     public_key: str | None = None
     """The `whpk_` Ed25519 public key to verify `v1a` signatures with:
     `Webhook(endpoint.public_key)`. `None` for HMAC endpoints."""
-    headers: dict[str, str] | None = None
+    headers: dict[str, str] | None = Field(default=None, repr=False)
     header_list: list[CustomHeader] = []
     """Headers in the `[{"name": .., "value": ..}]` form the API sends and
     takes. `headers` is the same data as a mapping, which cannot represent a
@@ -115,6 +121,14 @@ class WebhookEndpoint(HookbaseModel):
     circuit_failure_threshold: int = 0
     circuit_success_threshold: int = 0
     circuit_cooldown_seconds: int = 0
+    hold_on_circuit_open: bool | None = None
+    """Whether messages wait as `held` while the circuit is open, and go out when it closes,
+    instead of being dead-lettered. The API defaults it to true; FIFO and polling endpoints never
+    hold. None when the response doesn't say."""
+    held_count: int | None = None
+    """`get` only: messages to this endpoint held now, counted up to 10,000."""
+    held_count_capped: bool | None = None
+    """`get` only: true when there are more held messages than `held_count` says."""
     total_messages: int = 0
     total_successes: int = 0
     total_failures: int = 0
@@ -173,16 +187,20 @@ class WebhookEndpoint(HookbaseModel):
 
 
 class EndpointWithSecret(WebhookEndpoint):
-    secret: str = ""
+    model_config = SECRET_MODEL_CONFIG
+
+    secret: str = Field(default="", repr=False)
 
 
 class CreateEndpointParams(HookbaseModel):
+    model_config = SECRET_MODEL_CONFIG
+
     url: str
     description: str | None = None
     signature_scheme: SignatureScheme | None = None
     """`"hmac-sha256"` (the default) or `"ed25519"`. For Ed25519 Hookbase
     generates the key pair and returns only `public_key`."""
-    headers: dict[str, str] | list[CustomHeader] | None = None
+    headers: dict[str, str] | list[CustomHeader] | None = Field(default=None, repr=False)
     timeout_seconds: int | None = None
     rate_limit_per_second: int | None = None
     success_status_codes: list[SuccessStatusCode] | None = None
@@ -193,6 +211,9 @@ class CreateEndpointParams(HookbaseModel):
     circuit_failure_threshold: int | None = None
     circuit_success_threshold: int | None = None
     circuit_cooldown_seconds: int | None = None
+    hold_on_circuit_open: bool | None = None
+    """Hold messages while the circuit is open (the API's default, true) or dead-letter them
+    (false)."""
 
     # Deprecated fields, kept so existing callers keep type-checking and
     # running. See `endpoint_body` for what each one does on the wire.
@@ -211,6 +232,8 @@ class CreateEndpointParams(HookbaseModel):
 
 
 class UpdateEndpointParams(HookbaseModel):
+    model_config = SECRET_MODEL_CONFIG
+
     url: str | None = None
     description: str | None = None
     signature_scheme: SignatureScheme | None = None
@@ -218,7 +241,7 @@ class UpdateEndpointParams(HookbaseModel):
     previous one stops signing at once (no grace period)."""
     is_disabled: bool | None = None
     disabled_reason: str | None = None
-    headers: dict[str, str] | list[CustomHeader] | None = None
+    headers: dict[str, str] | list[CustomHeader] | None = Field(default=None, repr=False)
     timeout_seconds: int | None = None
     rate_limit_per_second: int | None = None
     success_status_codes: list[SuccessStatusCode] | None = None
@@ -229,6 +252,9 @@ class UpdateEndpointParams(HookbaseModel):
     circuit_failure_threshold: int | None = None
     circuit_success_threshold: int | None = None
     circuit_cooldown_seconds: int | None = None
+    hold_on_circuit_open: bool | None = None
+    """Hold messages while the circuit is open (the API's default, true) or dead-letter them
+    (false)."""
 
     clear: list[ClearableEndpointField] | None = None
     """Settings to reset to their defaults.
@@ -289,7 +315,9 @@ class EndpointStats(HookbaseModel):
 class RotateSecretResult(HookbaseModel):
     """The result of `POST /api/webhook-endpoints/:id/rotate-secret`."""
 
-    secret: str = ""
+    model_config = SECRET_MODEL_CONFIG
+
+    secret: str = Field(default="", repr=False)
     """The new HMAC signing secret. Save it now; no later response repeats it.
     Empty for an Ed25519 endpoint, whose private key is never returned: read
     `public_key` instead."""

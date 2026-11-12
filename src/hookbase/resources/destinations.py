@@ -13,12 +13,29 @@ from ..models.common import BulkDeleteResult, ImportResult
 from ..models.destinations import (
     CreateDestinationParams,
     Destination,
+    DestinationSecret,
+    DestinationWithSecret,
     TestResult,
     UpdateDestinationParams,
     create_destination_body,
     update_destination_body,
 )
 from ._base import AsyncResource, SyncResource, _warn_ignored
+
+
+def _rotate_body(grace_period_seconds: int | None) -> dict[str, Any] | None:
+    """`rotateSigningSecretSchema`: an optional gracePeriodSeconds, 0-86400 (API default 3600)."""
+    if grace_period_seconds is None:
+        return None
+    return {"gracePeriodSeconds": grace_period_seconds}
+
+
+def _test_body(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Only a bridge reads a body here: `payload` is the sample its dry run resolves. None sends
+    no body, since a bridge answers 400 to `payload: null`."""
+    if payload is None:
+        return None
+    return {"payload": payload}
 
 
 class Destinations(SyncResource):
@@ -40,10 +57,14 @@ class Destinations(SyncResource):
         resp = self._request("GET", f"/api/destinations/{id}")
         return self._parse(Destination, resp.get("destination", resp))
 
-    def create(self, params: CreateDestinationParams | dict[str, Any]) -> Destination:
+    def create(
+        self, params: CreateDestinationParams | dict[str, Any],
+    ) -> DestinationWithSecret:
+        """Create a destination. An HTTP destination's `signing_secret` is in this response
+        only; afterwards it takes `reveal_secret`."""
         body = create_destination_body(params)
         resp = self._request("POST", "/api/destinations", json=body)
-        return self._parse(Destination, resp.get("destination", resp))
+        return self._parse(DestinationWithSecret, resp.get("destination", resp))
 
     def update(self, id: str, params: UpdateDestinationParams | dict[str, Any]) -> None:
         body = update_destination_body(params)
@@ -52,8 +73,38 @@ class Destinations(SyncResource):
     def delete(self, id: str) -> None:
         self._request("DELETE", f"/api/destinations/{id}")
 
-    def test(self, id: str) -> TestResult:
-        resp = self._request("POST", f"/api/destinations/{id}/test")
+    def reveal_secret(self, id: str) -> DestinationSecret:
+        """Return an HTTP destination's signing secret. Needs the `write` scope; a non-HTTP
+        destination is a 400."""
+        resp = self._request("GET", f"/api/destinations/{id}/reveal-secret")
+        return self._parse(DestinationSecret, resp)
+
+    def rotate_secret(
+        self, id: str, *, grace_period_seconds: int | None = None,
+    ) -> DestinationSecret:
+        """Issue a new signing secret for an HTTP destination.
+
+        For `grace_period_seconds` (0-86400; the API defaults to 3600) deliveries are signed with
+        both the old and the new secret, so receivers can switch without rejecting any. 0 drops
+        the old secret at once.
+        """
+        resp = self._request(
+            "POST", f"/api/destinations/{id}/rotate-secret",
+            json=_rotate_body(grace_period_seconds),
+        )
+        return self._parse(DestinationSecret, resp)
+
+    def test(
+        self, id: str, *, payload: dict[str, Any] | None = None,
+    ) -> TestResult:
+        """Send a test delivery to the destination.
+
+        For a bridge destination this is a dry run that publishes nothing: it resolves the event
+        type from `payload` (a JSON object; the API's test payload when it is None) and reports
+        it in `event_type`, `event_type_exists` and `matching_endpoints`. Other types ignore
+        `payload`.
+        """
+        resp = self._request("POST", f"/api/destinations/{id}/test", json=_test_body(payload))
         return self._parse(TestResult, resp)
 
     def export(self, *, ids: builtins.list[str] | None = None) -> dict[str, Any]:
@@ -98,10 +149,13 @@ class AsyncDestinations(AsyncResource):
         resp = await self._request("GET", f"/api/destinations/{id}")
         return self._parse(Destination, resp.get("destination", resp))
 
-    async def create(self, params: CreateDestinationParams | dict[str, Any]) -> Destination:
+    async def create(
+        self, params: CreateDestinationParams | dict[str, Any],
+    ) -> DestinationWithSecret:
+        """Create a destination. See `Destinations.create`."""
         body = create_destination_body(params)
         resp = await self._request("POST", "/api/destinations", json=body)
-        return self._parse(Destination, resp.get("destination", resp))
+        return self._parse(DestinationWithSecret, resp.get("destination", resp))
 
     async def update(self, id: str, params: UpdateDestinationParams | dict[str, Any]) -> None:
         body = update_destination_body(params)
@@ -110,8 +164,28 @@ class AsyncDestinations(AsyncResource):
     async def delete(self, id: str) -> None:
         await self._request("DELETE", f"/api/destinations/{id}")
 
-    async def test(self, id: str) -> TestResult:
-        resp = await self._request("POST", f"/api/destinations/{id}/test")
+    async def reveal_secret(self, id: str) -> DestinationSecret:
+        """Return an HTTP destination's signing secret. See `Destinations.reveal_secret`."""
+        resp = await self._request("GET", f"/api/destinations/{id}/reveal-secret")
+        return self._parse(DestinationSecret, resp)
+
+    async def rotate_secret(
+        self, id: str, *, grace_period_seconds: int | None = None,
+    ) -> DestinationSecret:
+        """Issue a new signing secret. See `Destinations.rotate_secret`."""
+        resp = await self._request(
+            "POST", f"/api/destinations/{id}/rotate-secret",
+            json=_rotate_body(grace_period_seconds),
+        )
+        return self._parse(DestinationSecret, resp)
+
+    async def test(
+        self, id: str, *, payload: dict[str, Any] | None = None,
+    ) -> TestResult:
+        """Send a test delivery, or dry-run a bridge. See `Destinations.test`."""
+        resp = await self._request(
+            "POST", f"/api/destinations/{id}/test", json=_test_body(payload),
+        )
         return self._parse(TestResult, resp)
 
     async def export(self, *, ids: builtins.list[str] | None = None) -> dict[str, Any]:

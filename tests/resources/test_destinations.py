@@ -5,11 +5,14 @@ import re
 import pytest
 import respx
 
-from hookbase import Hookbase
+from hookbase import AsyncHookbase, Hookbase
 from hookbase.errors import HookbaseError
 from hookbase.models import (
+    BridgeConfig,
     CreateDestinationParams,
     Destination,
+    DestinationSecret,
+    DestinationWithSecret,
     FieldMapping,
     TestResult,
     Throttle,
@@ -486,3 +489,228 @@ def test_destination_response_exposes_timeout_ms(mock_api, client):
     assert dest.timeout_ms == 45000
     # The deprecated field mirrors it rather than sitting at a stale default.
     assert dest.timeout == 45000
+
+
+# --- signing secrets (HTTP destinations) ---
+
+
+def test_create_destination_keeps_the_one_time_signing_secret(mock_api, client):
+    mock_api.post("/api/destinations").respond(200, json={"destination": {
+        **DEST_DATA, "hasSigningSecret": True, "signingSecret": "whsec_abc",
+    }})
+    dest = client.destinations.create({"name": "Backend", "url": "https://example.com/webhooks"})
+    assert isinstance(dest, DestinationWithSecret)
+    assert dest.signing_secret == "whsec_abc"
+    assert dest.has_signing_secret is True
+
+
+def test_create_storage_destination_has_no_signing_secret(mock_api, client):
+    mock_api.post("/api/destinations").respond(200, json={"destination": {
+        **S3_DEST_DATA, "hasSigningSecret": False, "signingSecret": None,
+    }})
+    dest = client.destinations.create({"name": "S3 Archive", "type": "s3", "config": {}})
+    assert dest.signing_secret is None
+    assert dest.has_signing_secret is False
+
+
+def test_get_and_list_report_has_signing_secret(mock_api, client):
+    mock_api.get("/api/destinations/dst_1").respond(200, json={"destination": {
+        **DEST_DATA, "hasSigningSecret": True,
+    }})
+    mock_api.get("/api/destinations").respond(200, json=make_paginated_response(
+        [{**DEST_DATA, "hasSigningSecret": True}], data_key="destinations",
+    ))
+    assert client.destinations.get("dst_1").has_signing_secret is True
+    assert client.destinations.list().data[0].has_signing_secret is True
+    # Older responses without the key read as unsigned.
+    assert Destination.model_validate(DEST_DATA).has_signing_secret is False
+
+
+def test_reveal_secret(mock_api, client):
+    route = mock_api.get("/api/destinations/dst_1/reveal-secret").respond(200, json={
+        "signingSecret": "whsec_abc", "previousSecretExpiresAt": None,
+    })
+    secret = client.destinations.reveal_secret("dst_1")
+    assert isinstance(secret, DestinationSecret)
+    assert secret.signing_secret == "whsec_abc"
+    assert secret.previous_secret_expires_at is None
+    assert route.calls.last.request.content == b""
+
+
+def test_rotate_secret_without_grace_period_sends_no_body(mock_api, client):
+    route = mock_api.post("/api/destinations/dst_1/rotate-secret").respond(200, json={
+        "signingSecret": "whsec_new", "previousSecretExpiresAt": "2026-11-12T01:00:00Z",
+    })
+    secret = client.destinations.rotate_secret("dst_1")
+    assert secret.signing_secret == "whsec_new"
+    assert secret.previous_secret_expires_at == "2026-11-12T01:00:00Z"
+    # No body: the API applies its 3600 s default.
+    assert route.calls.last.request.content == b""
+
+
+@pytest.mark.parametrize("grace", [0, 600])
+def test_rotate_secret_sends_grace_period_seconds(mock_api, client, grace):
+    route = mock_api.post("/api/destinations/dst_1/rotate-secret").respond(200, json={
+        "signingSecret": "whsec_new", "previousSecretExpiresAt": None,
+    })
+    client.destinations.rotate_secret("dst_1", grace_period_seconds=grace)
+    assert sent_body(route) == {"gracePeriodSeconds": grace}
+
+
+async def test_async_destination_secrets(mock_api):
+    mock_api.post("/api/destinations").respond(200, json={"destination": {
+        **DEST_DATA, "hasSigningSecret": True, "signingSecret": "whsec_abc",
+    }})
+    mock_api.get("/api/destinations/dst_1/reveal-secret").respond(200, json={
+        "signingSecret": "whsec_abc", "previousSecretExpiresAt": None,
+    })
+    rotate = mock_api.post("/api/destinations/dst_1/rotate-secret").respond(200, json={
+        "signingSecret": "whsec_new", "previousSecretExpiresAt": "2026-11-12T01:00:00Z",
+    })
+    async with AsyncHookbase(api_key="whr_test") as c:
+        created = await c.destinations.create({"name": "Backend", "url": "https://x.test"})
+        assert isinstance(created, DestinationWithSecret)
+        assert created.signing_secret == "whsec_abc"
+        assert (await c.destinations.reveal_secret("dst_1")).signing_secret == "whsec_abc"
+        rotated = await c.destinations.rotate_secret("dst_1", grace_period_seconds=60)
+    assert rotated.previous_secret_expires_at == "2026-11-12T01:00:00Z"
+    assert sent_body(rotate) == {"gracePeriodSeconds": 60}
+
+
+# --- bridge destinations ---
+
+BRIDGE_DEST_DATA = {
+    "id": "dst_br",
+    "name": "Orders bridge",
+    "slug": "orders-bridge",
+    "type": "bridge",
+    "url": "",
+    "method": "POST",
+    "isActive": True,
+    "hasSigningSecret": False,
+    "config": {"eventTypeSource": "field", "eventTypeField": "type", "eventTypePrefix": "order."},
+}
+
+
+def test_create_bridge_destination_with_a_bridge_config(mock_api, client):
+    route = mock_api.post("/api/destinations").respond(200, json={"destination": {
+        **BRIDGE_DEST_DATA, "signingSecret": None,
+    }})
+    dest = client.destinations.create(CreateDestinationParams(
+        name="Orders bridge",
+        type="bridge",
+        config=BridgeConfig(
+            event_type_source="field", event_type_field="type", event_type_prefix="order.",
+        ),
+    ))
+    # camelCase keys, unset fields left out: the API's bridge schema is strict.
+    assert sent_body(route) == {
+        "name": "Orders bridge",
+        "slug": "orders-bridge",
+        "type": "bridge",
+        "config": {
+            "eventTypeSource": "field", "eventTypeField": "type", "eventTypePrefix": "order.",
+        },
+    }
+    assert dest.type == "bridge"
+    assert dest.url == ""
+    assert dest.signing_secret is None
+
+
+def test_bridge_config_in_a_plain_dict_is_serialized(mock_api, client):
+    route = mock_api.post("/api/destinations").respond(200, json={"destination": BRIDGE_DEST_DATA})
+    client.destinations.create({
+        "name": "Fixed bridge",
+        "type": "bridge",
+        "config": BridgeConfig(
+            event_type_source="fixed", event_type="order.created", allow_unverified_sources=True,
+        ),
+    })
+    assert sent_body(route)["config"] == {
+        "eventTypeSource": "fixed", "eventType": "order.created", "allowUnverifiedSources": True,
+    }
+
+
+def test_update_bridge_config(mock_api, client):
+    route = mock_api.patch("/api/destinations/dst_br").respond(200, json={"success": True})
+    client.destinations.update("dst_br", UpdateDestinationParams(
+        config=BridgeConfig(
+            event_type_source="fixed", event_type="order.paid", application_id="app_1",
+        ),
+    ))
+    assert sent_body(route) == {"config": {
+        "eventTypeSource": "fixed", "eventType": "order.paid", "applicationId": "app_1",
+    }}
+
+
+def test_destination_bridge_config_property(mock_api, client):
+    mock_api.get("/api/destinations/dst_br").respond(200, json={"destination": BRIDGE_DEST_DATA})
+    dest = client.destinations.get("dst_br")
+    cfg = dest.bridge_config
+    assert isinstance(cfg, BridgeConfig)
+    assert (cfg.event_type_source, cfg.event_type_field, cfg.event_type_prefix) == (
+        "field", "type", "order.",
+    )
+    assert cfg.application_id is None
+    assert Destination.model_validate(DEST_DATA).bridge_config is None
+
+
+def test_test_bridge_destination_sends_the_sample_payload(mock_api, client):
+    route = mock_api.post("/api/destinations/dst_br/test").respond(200, json={
+        "success": True, "dryRun": True, "eventType": "order.created",
+        "eventTypeExists": True, "matchingEndpoints": 2,
+    })
+    result = client.destinations.test("dst_br", payload={"type": "created"})
+    assert sent_body(route) == {"payload": {"type": "created"}}
+    assert result.success is True
+    assert result.dry_run is True
+    assert result.event_type == "order.created"
+    assert result.event_type_exists is True
+    assert result.matching_endpoints == 2
+    assert result.status is None
+
+
+def test_test_bridge_destination_with_an_unresolvable_event_type(mock_api, client):
+    mock_api.post("/api/destinations/dst_br/test").respond(200, json={
+        "success": False, "dryRun": True, "eventType": None, "eventTypeExists": False,
+        "matchingEndpoints": 0, "error": "Payload field 'type' is missing",
+    })
+    result = client.destinations.test("dst_br", payload={})
+    assert result.success is False
+    assert result.event_type is None
+    assert result.matching_endpoints == 0
+    assert result.error == "Payload field 'type' is missing"
+
+
+def test_test_destination_without_payload_sends_no_body(mock_api, client):
+    route = mock_api.post("/api/destinations/dst_1/test").respond(200, json={"success": True})
+    result = client.destinations.test("dst_1")
+    assert route.calls.last.request.content == b""
+    # Not a bridge: the dry-run fields are absent.
+    assert result.dry_run is None
+    assert result.event_type_exists is None
+    # None is no payload too: a bridge answers 400 to payload null.
+    client.destinations.test("dst_1", payload=None)
+    assert route.calls.last.request.content == b""
+
+
+async def test_async_test_destination_with_payload_none_sends_no_body(mock_api, async_client):
+    route = mock_api.post("/api/destinations/dst_br/test").respond(200, json={
+        "success": True, "dryRun": True, "eventType": "order.created",
+        "eventTypeExists": True, "matchingEndpoints": 0,
+    })
+    result = await async_client.destinations.test("dst_br", payload=None)
+    assert route.calls.last.request.content == b""
+    assert result.dry_run is True
+
+
+async def test_async_test_bridge_destination(mock_api):
+    route = mock_api.post("/api/destinations/dst_br/test").respond(200, json={
+        "success": True, "dryRun": True, "eventType": "order.created",
+        "eventTypeExists": True, "matchingEndpoints": 1,
+    })
+    async with AsyncHookbase(api_key="whr_test") as c:
+        result = await c.destinations.test("dst_br", payload={"type": "created"})
+    assert sent_body(route) == {"payload": {"type": "created"}}
+    assert result.dry_run is True
+    assert result.matching_endpoints == 1

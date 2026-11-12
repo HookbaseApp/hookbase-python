@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from ._base import HookbaseModel
+from pydantic import Field
+
+from ._base import SECRET_MODEL_CONFIG, HookbaseModel
 
 
 class PortalToken(HookbaseModel):
+    model_config = SECRET_MODEL_CONFIG
+
     id: str
     application_id: str = ""
-    token: str | None = None
+    token: str | None = Field(default=None, repr=False)
+    """The token in full. Only `create` returns it."""
     token_prefix: str | None = None
     name: str | None = None
     scopes: list[str] = []

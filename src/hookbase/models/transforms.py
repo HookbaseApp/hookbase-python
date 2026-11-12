@@ -1,13 +1,33 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, Union
 
 from pydantic import model_validator
 
 from ._base import HookbaseModel
 
-TransformType = Literal["jsonata", "javascript", "mapping", "liquid", "xslt"]
-ContentFormat = Literal["json", "xml", "form", "text"]
+# The engines the API runs (api/src/transforms/catalog.ts; `transforms.engines()` lists them
+# live). "mapping" was never one: the API rejects it with a 400. "jq" needs transform isolation on
+# the server; without it the API answers TRANSFORM_ENGINE_UNAVAILABLE.
+#
+# Both aliases accept any string, like MessageStatus, so a transform written in a language added
+# after this release still parses instead of failing the whole list() or get() call.
+TransformType = Union[
+    Literal[
+        "jsonata",
+        "javascript",
+        "typescript",
+        "liquid",
+        "xslt",
+        "jmespath",
+        "jsonlogic",
+        "jq",
+    ],
+    str,
+]
+# The formats the API accepts (VALID_CONTENT_FORMATS in api/src/transforms/validation.ts). "form"
+# was never one of them: a transform created with it got a 400.
+ContentFormat = Union[Literal["json", "xml", "text"], str]
 
 
 class Transform(HookbaseModel):
@@ -66,3 +86,29 @@ class TransformTestResult(HookbaseModel):
         if isinstance(data, dict) and "result" in data:
             return {**data, "output": data["result"]}
         return data
+
+
+class TransformEngine(HookbaseModel):
+    """One transform language the API runs, as `transforms.engines()` lists it."""
+
+    type: TransformType
+    """The value for `transform_type`."""
+    label: str = ""
+    description: str = ""
+    file_extension: str = ""
+    """The file extension editors and the CLI use for the language, without the dot."""
+    starter_code: str = ""
+    """A minimal working transform in the language."""
+    ai_generate: bool = False
+    """Whether the dashboard's AI generation offers this language."""
+    available: bool = True
+    """False when the language needs transform isolation and this deployment has it off; the API
+    then refuses to save or run transforms in it (TRANSFORM_ENGINE_UNAVAILABLE)."""
+
+
+class TransformEnginesResponse(HookbaseModel):
+    """The result of `transforms.engines()`."""
+
+    engines: list[TransformEngine] = []
+    content_formats: list[ContentFormat] = []
+    """The values `input_format` and `output_format` accept."""
